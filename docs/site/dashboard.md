@@ -322,8 +322,8 @@ switch between them, and the browser remembers. A link to a door the phone page 
 One scrollable page:
 
 - **Now**: the node's title and tagline, the reading at the household's own distance, the Decide card with its three
-  buttons (the first answer asks for a name, kept as `planetai_actor`), the other issues as rows, and on an unlocked
-  phone **Add an image**, which opens the phone's library. Where an image was taken is the picture's own GPS, else the
+  buttons (the first answer asks for a name, kept as `planetai_actor`), the other issues as rows, a pack's own bands
+  (below), and on an unlocked phone **Add an image**, which opens the phone's library. Where an image was taken is the picture's own GPS, else the
   phone's location if you allow it (browsers give it to https pages only), else the node's cell.
 - **Walk out from the house**: the map stays pinned while the story scrolls under it, one step per scale (house,
   street, ring, region, planet), drawing that scale's cell heavy with the smaller ones faint inside it. Each step says
@@ -332,6 +332,10 @@ One scrollable page:
   no reading at says so. `walk.js` and MapLibre load only as the walk nears the screen, so a slow phone gets its
   sentence first. `/?layout=walk` opens the same page.
 - **Node**: from `/health` only, so it draws even when everything else is refused.
+
+A pack's own band is the one the doors draw on Now, in the same words, placed in the one column by its stage:
+`decide` and `act` under the Decide card, `observe` under the other issues, and `measure` last, since the phone has
+no Did it work.
 
 The answers need the act token; without it the card says the question went to Telegram. To unlock a phone without
 typing a token, use **Show the code** in Set up › This screen. At `SHARE_LEVEL=open` the walk needs no token, map

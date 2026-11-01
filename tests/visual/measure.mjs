@@ -3216,6 +3216,44 @@ async function mobile() {
   }
   console.error('  mobile · locked');
 
+  /* 6b · a pack's declared bands (1 Nov 2026: until then the phone drew none). Decide and act under the Decide card,
+     observe under the other issues, measure last; each row a 44 px readout, nothing scrolls sideways at 320 or 390. */
+  {
+    const ro = (metric, value, en) => ({ metric, sensor_id: 'rig-square', unit: 'ha', dp: 0, value, label: { en }, source: 'Sentinel-2', provenance: 'partial', age_minutes: 4000 });
+    const SEC = [
+      { id: 'rig-rice', pack: 'rig', stage: 'observe', order: 48, title: { en: 'Rice around this node, from Sentinel-2' }, expected: 3,
+        note: { en: 'Declared for the gate: a long note, so the small print has to wrap inside the column it is in and not push the page sideways.' },
+        readouts: [ro('rice_ha', 639, 'rice'), ro('rice_lost_ha', 7.6, 'green a year ago, bare or built now')] },
+      { id: 'rig-ask', pack: 'rig', stage: 'decide', title: { en: 'What the rig would ask' }, readouts: [ro('a', 2, 'two')] },
+      { id: 'rig-did', pack: 'rig', stage: 'measure', title: { en: 'What the rig measured' }, expected: 1, readouts: [ro('m', 1, 'one')] }];
+    for (const w of [320, 390]) for (const dark of [false, true]) {
+      const tag = `${w}_${dark ? 'dark' : 'paper'}_sections`;
+      const r = await openRig({ w, dark, sections: SEC });
+      await r.page.goto(`${POP}/?layout=mobile&${FIXQ}`, { waitUntil: 'domcontentloaded' });
+      const got = await r.page.waitForSelector('#decl-rig-rice .row', { timeout: 15000 }).then(() => true, () => false);
+      ok(got, `${tag}: the phone drew no declared band`);
+      if (got) {
+        const m = await r.page.evaluate(() => {
+          const b = id => document.getElementById(id), after = (x, y) => !!(x && y && (x.compareDocumentPosition(y) & 4));
+          const rowsB = [...document.querySelectorAll('#now-v .rowb')], rows = [...document.querySelectorAll('#now-v .row.decl')];
+          return { ask: after(document.querySelector('#now-v .decide'), b('decl-rig-ask')) && after(b('decl-rig-ask'), rowsB[0] || b('decl-rig-rice')),
+            obs: after(rowsB[rowsB.length - 1] || b('decl-rig-ask'), b('decl-rig-rice')), did: after(b('decl-rig-rice'), b('decl-rig-did')),
+            h: rows.map(x => Math.round(x.getBoundingClientRect().height)), waiting: b('decl-rig-rice').textContent.includes('1 of the 3 readings'),
+            wide: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+        });
+        ok(m.ask, `${tag}: the decide band is not between the Decide card and the other issues`);
+        ok(m.obs, `${tag}: the observe band is not under the other issues`);
+        ok(m.did, `${tag}: the measure band does not close Now`);
+        ok(m.h.length === 4 && m.h.every(x => x >= 44), `${tag}: the bands' rows are ${m.h.join(',')} px (four of at least 44)`);
+        ok(m.waiting, `${tag}: the band does not say how many readings have not arrived`);
+        ok(m.wide <= 0, `${tag}: the phone scrolls ${m.wide}px sideways with a declared band`);
+        if (process.env.PAI_DOORS_SHOTS === '1') await r.page.screenshot({ path: path.join(OUT, `mobile_sections_${tag}.jpg`), type: 'jpeg', quality: 78, fullPage: true });
+      }
+      await r.browser.close();
+    }
+    console.error('  mobile · declared bands: 4 renders');
+  }
+
   /* 7 · the shots: mobile_populated_390 in both registers */
   for (const dark of [false, true]) {
     const r = await openRig({ dark });
@@ -3488,7 +3526,7 @@ async function doors() {
   for (const w of [390, 1440]) for (const dark of [false, true]) {
     const tag = `${w}_${dark ? 'dark' : 'paper'}_sections`;
     const r = await openRig({ w, h: w < 768 ? 844 : 900, touch: w < 768, dark, sections: SEC });
-    /* a phone with no remembered layout is sent to the phone page (mobile.html), which draws no declared band yet */
+    /* the doors on purpose: a phone with no remembered layout is sent to the phone page, whose bands `mobile` measures */
     await r.page.goto(`${POP}/?layout=doors&fixture=${FIXTURE}#now`, { waitUntil: 'domcontentloaded' });
     const got = await wait(r.page, '#decl-rig-rice .row').then(() => true, () => false);
     await r.page.waitForSelector('#asking:not(.on)', { state: 'attached', timeout: 6000 }).catch(() => {});

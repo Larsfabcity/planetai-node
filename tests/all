@@ -135,6 +135,7 @@ test_issues_engine|PACKS_DIR=packs PYTHONPATH=app python3 tests/test_issues_engi
 test_pack_readouts|PYTHONPATH=app python3 tests/test_pack_readouts.py
 test_pack_sections|PYTHONPATH=app python3 tests/test_pack_sections.py
 test_doors_sections|PYTHONPATH=app python3 tests/test_doors_sections.py
+test_mobile_sections|PYTHONPATH=app python3 tests/test_mobile_sections.py
 test_requires|PYTHONPATH=app python3 tests/test_requires.py
 test_issues_geometry|PACKS_DIR=packs PYTHONPATH=app python3 tests/test_issues_geometry.py
 test_earth_frames|PYTHONPATH=app python3 tests/test_earth_frames.py
@@ -188,12 +189,12 @@ printf '  %d suites: %d passed, %d failed, %d check(s) skipped\n' "$total" "$pas
 [ -n "$skip_lines" ] && printf '%s' "$skip_lines"
 [ -n "$failed_names" ] && printf '  failed:%s\n' "$failed_names"
 
-# Ninety-one is the number of suites in the list above (test_peers_persist left with the Reticulum bridge, and
+# Ninety-five is the number of suites in the list above (test_mobile_sections joined 1 Nov 2026; test_peers_persist left with the Reticulum bridge, and
 # test_terrain joined, 23 Oct 2026; test_views_pg and test_grafana joined 24 Oct). If the list and this number disagree, one of them
 # is a typo, and a runner that quietly runs twenty-five of twenty-six is the bug it was written to end.
 # (The word and the number had drifted apart by two bumps when packs/make added the forty-fourth.)
-if [ "$total" -ne 94 ]; then
-  printf '  \033[31mx\033[0m ran %d suites, expected 94 — the list in this file lost or gained a line\n' "$total"
+if [ "$total" -ne 95 ]; then
+  printf '  \033[31mx\033[0m ran %d suites, expected 95 — the list in this file lost or gained a line\n' "$total"
   exit 1
 fi
 [ "$fail" -gt 0 ] && exit 1
