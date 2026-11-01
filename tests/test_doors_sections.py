@@ -3,7 +3,8 @@
 Until 31 Oct 2026 only the classic layout drew them, so every wild pack's band (paddy, bmkg-synop on node #1) was
 invisible on a node's default page. Now draws each one beside the part of Now with the same stage: observe under the
 issue rows, decide and act under What to do, measure under Did it work. The section comes from the engine
-(engine._sections), through buildD(), into declaredBands(), lifted out of doors-now.js and run in node.
+(engine._sections), through buildD(), into declaredBands() (doors-load.js, shared with the phone page) and
+doors-now.js's drawDeclared(), lifted out and run in node. The phone's own placing is tests/test_mobile_sections.py.
 Run: PYTHONPATH=app python3 tests/test_doors_sections.py
 """
 import json
@@ -42,6 +43,7 @@ prog = r"""
 const fs = require('fs'), vm = require('vm');
 const L = require('./app/static/doors-load.js');
 const core = fs.readFileSync('./app/static/doors-core.js', 'utf8'), now = fs.readFileSync('./app/static/doors-now.js', 'utf8');
+const load = fs.readFileSync('./app/static/doors-load.js', 'utf8');
 const pick = n => core.match(new RegExp('^const ' + n + ' = .*$', 'm'))[0], fn = (src, n) => src.match(new RegExp('function ' + n + '\\b[\\s\\S]*?\\n}\\n'))[0];
 const F = JSON.parse(fs.readFileSync('app/issues/fixtures/node1-2026-10-06-figures.json', 'utf8'));
 F.issues.sections = JSON.parse(process.argv[1]);
@@ -51,8 +53,8 @@ for (const lc of ['en', 'id']) {
   const ctx = { D, $: q => (els[q] ||= { hidden: true, innerHTML: '' }) };
   vm.createContext(ctx);
   vm.runInContext(['esc', 'fmt', 'said', 'sign', 'NODE', 'PROV', 'prov', 'ago', 'num'].map(pick).join('\n') + '\n'
-    + now.match(/^const DECL_STAGES = .*$/m)[0] + '\n' + now.match(/^const DECL_AT = .*$/m)[0] + '\n'
-    + fn(now, 'declaredBands') + fn(now, 'declaredBand') + 'declaredBands();', ctx);
+    + load.match(/^const DECL_STAGES = .*$/m)[0] + '\n' + load.match(/^const DECL_AT = .*$/m)[0] + '\n'
+    + fn(load, 'declaredBands') + fn(load, 'declaredBand') + fn(now, 'drawDeclared') + 'drawDeclared();', ctx);
   out[lc] = Object.fromEntries(Object.entries(els).map(([k, v]) => [k, { hidden: v.hidden, html: v.innerHTML }]));
 }
 console.log(JSON.stringify(out));
@@ -96,7 +98,7 @@ html = (STATIC / "doors.html").read_text()
 nowh = html[html.index('<main class="face view" data-view="now">'):html.index("<!-- PLACE -->")]
 assert nowh.index('id="decide"') < nowh.index('id="ndecl-decide"') < nowh.index('id="nremember"') < nowh.index('id="ndecl-measure"') \
     < nowh.index('class="rcol"') < nowh.index('id="rows"') < nowh.index('id="ndecl-observe"') < nowh.index('class="around"'), "a mount moved"
-assert "declaredBands();" in (STATIC / "doors-now.js").read_text().split("VIEWS.now = function")[1].split("};")[0]
+assert "drawDeclared();" in (STATIC / "doors-now.js").read_text().split("VIEWS.now = function")[1].split("};")[0]
 assert "sections" not in (STATIC / "doors-wall.js").read_text(), "the Wall door does not take the declared bands; wall: true is the classic wall's"
 print("  the three mounts sit where the design put them, Now draws them on every visit, and the Wall door is unchanged")
 print("doors sections: a pack's declared band draws on Now, beside its stage, with Now's own readout rows")

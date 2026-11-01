@@ -9,6 +9,10 @@
   work. They use Now's issue rows, say how many readings have not arrived, and carry the pack's note under them. The
   classic layout and the Wall (`wall: true`) are as they were.
 
+- **And on a phone.** The phone page (`?layout=mobile`, where a phone lands on its own) draws the same bands, with
+  the same code, in its one column: `decide` and `act` under the Decide card, `observe` under the other issues,
+  `measure` at the end of Now.
+
 - **A laptop on the LAN can flash and test over USB.** Chrome opens a USB port only on a secure page, so from
   `http://<node>:8080` the Flash and USB buttons stayed off. Now the workbench says how to fix that on the laptop, once:
   Chrome's flag `chrome://flags/#unsafely-treat-insecure-origin-as-secure` with the page's own address filled in, in
