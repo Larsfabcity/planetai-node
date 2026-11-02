@@ -7,6 +7,10 @@
   before its alert existed, so a pack that wanted an answer had to hope someone found the number. The `surf` wild pack
   is the first to use it: after a session the keeper answers how the surf was.
 
+- **`planetai act 812 closed the windows` keeps every word.** Only the first word after the id was stored, so an
+  unquoted note lost the rest without saying so. A message whose `{act}` reads `planetai act 812` now gets the whole
+  answer.
+
 - **`planetai hello` no longer undoes other nodes' entries.** It cut its branch from the operator's fork as it was
   when they forked, so a fork made weeks ago sent back the list of that day: #365 put back an old operator and contact
   on `bayu-ungasan` and conflicted with `larsbcn`. Now it brings the fork's `main` up to fabcity's first

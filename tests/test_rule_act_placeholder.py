@@ -5,6 +5,8 @@ test_run_rules_modes (importing main starts a second MQTT client). Then tools/ch
 placeholder no SQL returns. Run: python3 tests/test_rule_act_placeholder.py
 """
 import ast
+import json
+import re
 import contextlib
 import os
 import pathlib
@@ -94,4 +96,25 @@ try:
 finally:
     shutil.rmtree(tmp)
 print("  check_rules accepts {act} as a placeholder the node fills")
+
+# Where the bot does not run, {act} reads `planetai act 812`, and a message that asks for "your words" gets them
+# unquoted. Every word after the id is the note, not only the first.
+STUBS = r'''
+curl() { while [ $# -gt 0 ]; do [ "$1" = -d ] && printf '%s' "$2" > "$OUT"; shift; done; }
+envget() { :; }; port() { echo 8080; }; say() { :; }; warn() { :; }; api() { :; }; json() { :; }
+'''
+
+
+def cli_note(*args):
+    out = pathlib.Path(tempfile.mkdtemp()) / "body.json"
+    fn = re.search(r"^cmd_act\(\) \{.*?^\}", (ROOT / "bin" / "planetai").read_text(), re.S | re.M).group(0)
+    subprocess.run(["bash", "-c", STUBS + fn + '\ncmd_act "$@"', "x", *args], env={**os.environ, "OUT": str(out)},
+                   check=True, capture_output=True)
+    return json.loads(out.read_text())["note"]
+
+
+assert cli_note("812", "Uluwatu", "good,", "head", "high") == "Uluwatu good, head high", cli_note("812", "Uluwatu", "good")
+assert cli_note("812", "closed the windows") == "closed the windows", "a quoted note is kept as it was"
+assert cli_note("812") == "acted", "no words keeps the old default"
+print("  planetai act 812 <words>: every word is the note")
 print("test_rule_act_placeholder: all checks passed")
