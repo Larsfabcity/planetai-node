@@ -104,6 +104,9 @@ Every message carries `en`, `id` and `es` with the same placeholders; `make test
 Every column the message uses must come from the SQL. `make lint` checks that, plus unknown columns, cells without a
 `value`, and cooldowns over a fortnight (add `long_cooldown_ok: true` if that is deliberate).
 
+A message that asks for an answer can carry `{act}`. The node fills it with the alert's own number, as the household
+answers it: `/act 812` where the Telegram bot runs, `planetai act 812` where it does not. The SQL does not return it.
+
 A rule can compute something for the report instead of interrupting anyone:
 
 ```yaml
