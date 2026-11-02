@@ -2,7 +2,7 @@
 /* mobile.js — the phone page (SPEC_mobile §5–§7): one scrollable page, Now / Place / Node. The data is D from
    doors-load.js (loadD with the phone's route subset); the page writes no household sentence — title, tagline,
    plain, the action and the button labels are the wire's, character for character.
-   The seven one-line helpers are copied from doors-core.js, which boots the doors on load and cannot be imported. */
+   The eight one-line helpers are copied from doors-core.js, which boots the doors on load and cannot be imported. */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const hhmm = iso => iso ? doorsLocal(iso, D && D.tz).slice(11, 16) : '';   /* in the node's zone (doors-load.js) */
@@ -13,6 +13,7 @@ const sign = (id, cls = '') => `<svg class="sg ${cls}" aria-hidden="true"><use h
 const PROV = ['live', 'partial', 'model', 'cached', 'example'];
 const prov = w => PROV.includes(w) ? `<span class="pill">${sign('sign-prov-' + w)}${w}</span>` : `<span class="gap">${esc(w)}</span>`;
 const num = (key, v, cmp, inner) => `<span data-num="${esc(key)}" data-cmp="${esc(cmp)}">${inner ?? esc(v)}</span>`;
+const ago = m => m < 90 ? `${Math.round(m)} min` : m < 48 * 60 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} days`;   /* a declared band's age (declaredBand, doors-load.js) */
 const ANSWER_STAGE = { done: 'acted', not_now: 'acknowledged', doesnt_fit: 'dismissed' };
 
 /* the phone's subset (SPEC_mobile §8): never the token-only three, never rho/cells */
@@ -80,7 +81,10 @@ function drawNow() {
     + `<p class="cmp">${it.line != null ? `against the line, ${esc(fmt(it.line, it.dp))} <span class="unit">${esc(it.unit || '')}</span>` : esc(cmp)}</p>`
     + (it.plain ? `<p class="plain">${said(it.plain)}</p>` : '') + `</div>`;
   /* the four distances are the walk's, below: its rail on the map and one chapter each */
-  s += decideHTML(it);
+  /* a pack's declared bands (doors-load.js), each beside its stage as on the doors' Now: decide and act under the card,
+     observe under the other issues; the phone has no Did it work, so measure closes Now */
+  const bands = declaredBands(D.sections);
+  s += decideHTML(it) + (bands.decide || '');
   /* the other issues, one row each */
   const others = D.order.filter(k => k !== leadKey && D.issues[k]);
   if (others.length) {
@@ -92,7 +96,7 @@ function drawNow() {
         + `</span><span class="t2">${said(o.title || o.sentence || '')}</span></button>`;
     }).join('') + `</div>`;
   }
-  s += captureHTML();
+  s += (bands.observe || '') + (bands.measure || '') + captureHTML();
   $('#now-v').innerHTML = s;
 }
 

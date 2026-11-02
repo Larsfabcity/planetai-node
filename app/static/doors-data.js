@@ -51,7 +51,8 @@ const DTABS = {
   models: ['Models and satellite', ['models'], () => modelsBlock()],
   home: ['Home', ['d-images', 'd-things'], () => { imagesBlock(); thingsBlock(); }],
   ledger: ['Ledger', ['ledger', 'dnote'], () => ledgerBlock()],
-  api: ['API', ['api'], () => apiBlock()] };
+  api: ['API', ['api'], () => apiBlock()],
+  workbench: ['Workbench', ['d-workbench'], () => workbenchBlock()] };
 /* an anchor Data used to have: the tab that holds that section now; and what moved to Node, with Node's own anchor */
 const DOLD = { 'd-readings': 'readings', metrics: 'readings', sensors: 'readings', issues7: 'readings', perday: 'readings', 'd-images': 'home', 'd-things': 'home' };
 const DNODE = { cells: 'cells', 'd-learned': 'remember', 'd-usual': 'remember', 'd-diary': 'remember' };
@@ -87,6 +88,27 @@ VIEWS.data = function () {
     if (el) { el.scrollIntoView({ block: FOCUS ? 'center' : 'start' }); if (FOCUS) el.classList.add('focus'); }
   });
 };
+
+/* THE WORKBENCH (Tomas, 27 Oct 2026: "embeds in the same data menu", "a reduced version of the full workbench",
+   "able to run offline in the node"). The node's copy of planetai.fab.city/sensors, served at /workbench and reduced
+   there (workbench-node.html), drawn in a frame so its own styles and script stay out of the doors. The frame is made
+   once and kept, so a refresh of Data never reloads a flash in progress; #data/workbench/<flash|test|network> picks
+   its view. Its height follows its page. The full workbench is linked only when planetai.fab.city answers. */
+function workbenchBlock() {
+  const sec = $('#d-workbench'), view = decodeURIComponent(location.hash.split('/')[2] || '');
+  let f = sec.querySelector('iframe');
+  if (f) { if (view && f.contentWindow && f.contentWindow.location.hash !== '#' + view) f.contentWindow.location.hash = view; return; }
+  sec.innerHTML = `<div class="dsh"><h2>Flash and test a sensor</h2><p class="blurb">Flash the Bayu and every Meshtastic radio, test a board over USB and see the network this node hears. It works with no internet: the firmware and the flasher are kept on this node. <span id="wbfull"></span></p></div>
+    <iframe src="/workbench${view ? '#' + encodeURIComponent(view) : ''}" title="Sensors workbench" allow="serial"></iframe>`;
+  f = sec.querySelector('iframe');
+  f.onload = () => {
+    const d = f.contentDocument; if (!d || !d.body) return;
+    new ResizeObserver(() => { f.style.height = d.body.offsetHeight + 'px'; }).observe(d.body);
+  };
+  fetch('https://planetai.fab.city/sensors/manifest.webmanifest', { mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(5000) })
+    .then(() => { $('#wbfull').innerHTML = '<a href="https://planetai.fab.city/sensors/" target="_blank" rel="noopener">The full workbench, on planetai.fab.city ↗</a>'; })
+    .catch(() => {});
+}
 
 function metricTiles() {
   const S2 = D.raw ? D.raw.series : {}, src = {}, now = {};
@@ -313,6 +335,7 @@ async function thingsBlock() {
   const el = $('#d-things');
   if (CARDLG && CARDLG.open) return;   // a refresh must not wipe an edit in progress
   const r = await doorsFetch('/things').catch(() => null);
+  if (r && r.status === 404) { el.innerHTML = `<h2>Things</h2><p class="fine">The things pack is off on this node. Switch it on in Set up, under Packs, to keep a list of what this home has here.</p>`; return; }
   const j = r && r.ok ? await r.json().catch(() => null) : null;
   if (!j) { el.innerHTML = `<h2>Things</h2><p class="fine">What this home keeps stays private to this house and never leaves it. Unlock this screen with the admin key in ${UNLOCK_AT} to see it.</p>`; return; }
   const s = j.summary;
@@ -414,7 +437,9 @@ const imgStatus = a => !a ? 'not described' : a.confirmed_by ? `confirmed by ${a
 async function imagesBlock() {
   const el = $('#d-images');
   if (CARDLG && CARDLG.open) return;   // a refresh must not wipe an edit in progress
-  const rows = await doorsFetch('/captures?limit=500').then(r => (r.ok ? r.json() : null)).catch(() => null);
+  const rr = await doorsFetch('/captures?limit=500').catch(() => null);
+  if (rr && rr.status === 404) { el.innerHTML = `<h2>Images</h2><p class="fine">The eyes pack is off on this node. Switch it on in Set up, under Packs, to keep pictures of this place here.</p>`; return; }
+  const rows = rr && rr.ok ? await rr.json().catch(() => null) : null;
   TKEEP = await doorsFetch('/things').then(r => (r.ok ? r.json() : null)).catch(() => null);
   if (!rows) { el.innerHTML = `<h2>Images</h2><p class="fine">Images stay private to this house: the picture and where it was taken. Unlock this screen in ${UNLOCK_AT} to see them.</p>`; return; }
   // what a person here has confirmed, per species (SPEC_species §4): the model's guesses are not in it

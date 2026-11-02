@@ -5,7 +5,7 @@
    routes it reads and its stage; every figure carries its comparison; the node's words are never shouted; provenance
    is a pill in ink. The scales are Place's: the kicker links there and draws no rail. */
 VIEWS.now = function () {
-  rows(); drawNow();
+  rows(); drawDeclared(); drawNow();
   aroundMap($('#rose')); thingsLine($('#nthings')); rememberLoad().then(() => decision());   /* the usual hour joins "Nothing is asked now" */
 };
 /* YESTERDAY and DID IT WORK: the short part of the diary (Tomas, 14 Oct: the diary split between Now and Node, whose
@@ -208,6 +208,14 @@ document.addEventListener('click', async ev => {
     D = await loadD().then(d => Object.assign(d, { learn: D.learn, dates: D.dates, at: D.at, now: D.now, sens: D.sens, ngeo: D.ngeo })); VIEWS.now();
   } catch (e) { out.textContent = WORDS.noreply; b.disabled = false; }
 });
+
+/* BANDS A PACK DECLARES (docs/PACKS.md, A declared section): drawn by declaredBands() in doors-load.js, which the
+   phone page shares. Each sits beside the part of Now of the same stage (Tomas, 31 Oct): observe under the issue rows,
+   decide and act under What to do (Now has no act part of its own), measure under Did it work. */
+function drawDeclared() {
+  const at = declaredBands(D.sections);
+  for (const m of ['observe', 'decide', 'measure']) { const el = $('#ndecl-' + m); el.innerHTML = at[m] || ''; el.hidden = !at[m]; }
+}
 
 /* Around the house: the issues drawn by the hour, one row each; a row moves the page to that issue. Land and Coast
    change yearly and have no hours, so they are not here: Place says them, beside the ground (doors-place.js). */

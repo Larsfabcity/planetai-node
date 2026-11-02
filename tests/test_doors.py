@@ -52,7 +52,15 @@ print("doors: the theme's fonts/jetbrains-mono-latin.woff2 answers 200")
 # the unit /issues names for a metric is the unit the node stores it in, which Home Assistant is told too: pressure
 # said hPa over kPa values, and the Data door read 99.8 hPa beside the model's 996 (14 Oct 2026)
 from issues import engine as _engine  # noqa: E402
-_off = {m: (u, _engine.METRICS[m]["unit"]) for m, (u, _) in main.HA_UNITS.items() if u and m in _engine.METRICS and _engine.METRICS[m]["unit"] != u}
+def _ha_units():
+    """HA_UNITS from packs/home-assistant, where Home Assistant lives since 22 Oct (not importable as a package)."""
+    import importlib.util as _iu
+    _spec = _iu.spec_from_file_location("ha_hooks", "packs/home-assistant/hooks.py")
+    _m = _iu.module_from_spec(_spec); _spec.loader.exec_module(_m)
+    return _m.HA_UNITS
+
+
+_off = {m: (u, _engine.METRICS[m]["unit"]) for m, (u, _) in _ha_units().items() if u and m in _engine.METRICS and _engine.METRICS[m]["unit"] != u}
 assert not _off, _off
 print("doors: every metric's unit on the page is the unit the node stores it in")
 
@@ -84,7 +92,7 @@ from types import SimpleNamespace  # noqa: E402
 os.environ.setdefault("NODE_LAT", "-8.819"); os.environ.setdefault("NODE_LON", "115.164")
 _rq = lambda t: SimpleNamespace(state=SimpleNamespace(share_trusted=t))  # noqa: E731
 _kw = dict(id=None, lat=-8.8, lon=115.17, res=14, children=15, polar=True)
-_open, _mine = main.geo_cell(_rq(False), **_kw), main.geo_cell(_rq(True), **_kw)
+_open, _mine = main.geo.geo_cell(_rq(False), **_kw), main.geo.geo_cell(_rq(True), **_kw)
 assert not {"is_node", "cells_from_node", "ring_polar", "children_polar"} & set(_open) and _open["ring"] == _mine["ring"], _open.keys()
 assert {"is_node", "cells_from_node", "ring_polar", "children_polar"} <= set(_mine)
 print("doors: a phone with no token gets the map and the cells, never where they stand from the house")
@@ -273,6 +281,11 @@ print("doors: the Wall names no sensor, room or kit, and says stale only when th
 _pg = t["wall"]["pages"]
 _wsrc = (STATIC / "doors-wall.js").read_text()
 _ws = re.search(r"const WALL_SCALES = (\[.*?\]);", _wsrc).group(1)
+# The story rolls when it is longer than its box (Tomas, 21 Oct: the end was cut and the start never came back): after
+# typing, and again when a scale gives the box its room back; still under reduced motion.
+assert "if (!NARR.typing) narrRoll();" in _wsrc and "!NARR.typing) narrRoll();" in _wsrc.split("function wallFit")[1].split("function wallHour")[0], \
+    "the Wall's story does not start rolling after typing, or when its box gets room again"
+assert re.search(r"prefers-reduced-motion: reduce\)\{[^}]*\.wnarr \.nw\.roll \.nt\{animation:none", html), "the story rolls under reduced motion"
 _ps = re.search(r"const SCALES = (\[.*?\]);", (STATIC / "walk.js").read_text()).group(1)
 assert re.findall(r"k: '(\w+)'", _ws) == re.findall(r"k: '(\w+)'", _ps) and re.findall(r"res: (\d+)", _ws) == re.findall(r"res: (\d+)", _ps)[:4], (_ws, _ps)
 for _i, _h in enumerate(_pg):
@@ -400,8 +413,8 @@ _nowjs = (STATIC / "doors-now.js").read_text()
 assert 'id="rail"' not in _nowh and "function rail(" not in _nowjs and 'id="cellink" title="This node\'s cell, on Place"' in _nowh, \
     "the grain rail is back on Now"
 # the parts in reading order, each keeping its learn mark: lead, figure, distances, buttons, then the house's states
-_marks = re.findall(r'data-learn="([a-z]+)"', _nowh)
-assert _marks == ["lead", "figure", "distances", "buttons", "states", "custody"], _marks
+_marks = re.findall(r'data-learn="([a-z-]+)"', _nowh)
+assert _marks == ["now-sentence", "figure", "now-distances", "now-todo", "now-worked", "now-rows", "now-around", "now-things"], _marks
 assert _nowh.index('id="decide"') < _nowh.index('id="nremember"') < _nowh.index('class="rcol"'), "What to do, then Did it work, then around"
 # heads name the reader's question, in sentence case; no engine stage shouted on Now
 assert "Around the house</h2>" in _nowh and "`Right now · " in _nowjs and '<h2 class="nh">What to do</h2>' in _nowjs
@@ -638,7 +651,7 @@ const page = tok => ({ D, d3, $: mk(), console, Response, DOORS_TOKEN: () => (to
     await new Promise(r => setTimeout(r, 20)); out[tok ? 'sp' : 'spLocked'] = c.$('#pspecies').innerHTML;
   }
   /* the verdict, on the capture, stale, and with a failing loop */
-  const v = new vm.Script(['loc', 'dayOf'].map(pick).join('\n') + '\n' + node.match(/^const ago = .*$/m)[0] + '\n' + fn(node, 'verdict') + 'verdict');
+  const v = new vm.Script(['loc', 'dayOf', 'ago'].map(pick).join('\n') + '\n' + fn(node, 'verdict') + 'verdict');
   const vc = { D, doorsLocal: L.doorsLocal }; vm.createContext(vc); const verdict = v.runInContext(vc);
   out.v = verdict(D); out.vStale = verdict({ ...D, health: { ...D.health, last_poll: '2026-10-06T08:00:00+00:00' } });
   out.vErr = verdict({ ...D, health: { ...D.health, errors: { forecast: 'boom' } } });
@@ -709,7 +722,7 @@ vm.runInContext(['esc', 'WD', 'loc', 'dayOf', 'dLabel', 'wdhm', 'fmt', 'lineLab'
   + `\nD.dates = [...new Set(D.buckets.map(dayOf))]; D.now = D.buckets.length - 1; D.sens = Object.fromEntries(D.sensors.map(s => [s.sensor_id, s]));
    const calls = [], spy = n => { globalThis[n] = () => calls.push(n); };
    const real = { ledgerBlock, modelsBlock };
-   ['metricTiles', 'sensorsBlock', 'issuesBlock', 'perdayBlock', 'modelsBlock', 'imagesBlock', 'thingsBlock', 'ledgerBlock', 'apiBlock'].forEach(spy);
+   ['metricTiles', 'sensorsBlock', 'issuesBlock', 'perdayBlock', 'modelsBlock', 'imagesBlock', 'thingsBlock', 'ledgerBlock', 'apiBlock', 'workbenchBlock'].forEach(spy);
    const draw = h => { calls.length = 0; location.hash = h; location.replaced = null; VIEWS.data();
      return { calls: calls.slice(), shown: Object.values(DTABS).flatMap(t => t[1]).filter(id => !document.getElementById(id).hidden),
        on: (document.getElementById('dnav').innerHTML.match(/href="(#data\\/\\w+)"[^>]*class="on"/) || [])[1] || null, node: location.replaced }; };
@@ -727,7 +740,8 @@ console.log(JSON.stringify(ctx.out));
 _d = json.loads(subprocess.run(["node", "-e", dprog, FIX], capture_output=True, text=True, check=True).stdout)
 _want = {"readings": (["metricTiles", "sensorsBlock", "issuesBlock", "perdayBlock"], ["d-readings", "issues7", "perday"]),
          "models": (["modelsBlock"], ["models"]), "home": (["imagesBlock", "thingsBlock"], ["d-images", "d-things"]),
-         "ledger": (["ledgerBlock"], ["ledger", "dnote"]), "api": (["apiBlock"], ["api"])}
+         "ledger": (["ledgerBlock"], ["ledger", "dnote"]), "api": (["apiBlock"], ["api"]),
+         "workbench": (["workbenchBlock"], ["d-workbench"])}
 for _t, (_calls, _shown) in _want.items():
     _g = _d["tabs"][_t]
     assert _g["calls"] == _calls and _g["shown"] == _shown and _g["on"] == f"#data/{_t}", (_t, _g)
@@ -785,7 +799,26 @@ assert [x["label"] for x in _c["pack"]] == ["B"] == [x["label"] for x in _c["pac
 assert _c["key"][0]["to"] == "a new value" and "sk-x" not in json.dumps(_c["key"]), "a secret is never repeated back"
 _setup = (STATIC / "doors-setup.js").read_text()
 assert "confirm(" not in _setup[_setup.index("async function sSave"):] and "sConfirm(c)" in _setup and "Save anyway" in _setup and 'data-a="back"' in _setup
-assert "Read at start" in _setup and _setup.count("planetai restart") == 1, "what is read at start is one table, its instruction said once"
+# counted as the .env instruction, not every `planetai restart`: a wild pack's card says how to remove it (27 Oct)
+assert "Read at start" in _setup and _setup.count("<code>.env</code> on the node, then run <code>planetai restart</code>") == 1 \
+    and "edit .env" not in _setup, "what is read at start is one table, its instruction said once"
+# Set up in categories (24 Oct 2026): every section in the menu has its explainer, a group no category names still
+# reaches the menu (in the last one), and what leaves the machine is said on the closed row, never only inside the fold
+_cats = sorted(set(re.findall(r"'([a-z]+)'", _setup[_setup.index("const SETUP_CATS"):_setup.index("const SETUP_TIPS")])))
+_tips = sorted(re.findall(r"^  ([a-z]+): '", _setup[_setup.index("const SETUP_TIPS"):_setup.index("const SETUP_BOOLS")], re.M))
+assert _cats == _tips, f"a section in the menu has no explainer, or an explainer no section: {_cats} vs {_tips}"
+assert "cats[cats.length - 1][1].push(...[...have].filter(x => !named.has(x)))" in _setup, "an unnamed group must still reach the menu"
+_grp = _setup[_setup.index("function sGroup"):_setup.index("function sGrafana")]
+assert 'class="pbody"' in _grp and "mine.map(r => sRow(r, unlocked))" in _grp[_grp.index('class="pbody"'):], "a pack's settings are inside its fold"
+assert _grp.index('data-pack="${esc(p.id)}"') < _grp.index('class="pbody"'), "a pack's on/off switch stays on the closed card"
+assert 'class="more"' not in _setup and "class=\"sx\"" not in _setup, "rows are not folded one by one: the pack is (Tomas, 24 Oct 2026)"
+assert 'role="tooltip"' in _setup and 'aria-describedby="tip-${s}"' in _setup, "the explainer is tied to its section for a screen reader"
+print("doors: Set up's menu in categories, every section explained, each pack folded with its switch outside")
+_gf = _setup[_setup.index("function sGrafana"):_setup.index("function sUpdates")]
+assert "sGrafana(d.bootstrap" in _setup and "g === 'system' ? sGrafana" in _setup, "Set up › System draws the Grafana block"
+assert "!/^GRAFANA_/.test(b.key)" in _setup, "Grafana's keys are its block, not three more rows in the start-time table"
+assert "planetai grafana" in _gf and "ssh -L" in _gf and "grafana/" in _gf, "the block says how to turn it on, how to reach it, and links its page"
+assert "GRAFANA_ADMIN_PASSWORD') ?" in _gf and "esc(v('GRAFANA_ADMIN_PASSWORD'))" not in _gf, "the password is only ever set or not"
 print("doors: Set up asks before a change that leaves the machine or runs code, in the setting's own words, and never otherwise")
 
 # 44 px targets: the tab bars (Data's and Set up's), Set up's switches and buttons, the ledger's filter; the tab bar
@@ -802,4 +835,9 @@ _w = (STATIC / "doors-wall.js").read_text() + (STATIC / "doors-wallmap.js").read
 assert not re.search(r"rhoRow|RHO_ROW|wrho|F\.answers|F\.alerts|answers back", _w), "the Wall shows answers to alerts again"
 assert ".wrho" not in html
 print("doors: the Wall counts no answers to alerts, in words or rings")
+
+# a newer release is one small line in the bar, hidden until /health says so, and it opens Set up › Updates
+assert re.search(r'<header class="bar"[^>]*>.*id="relnote" href="#setup/updates"[^>]*hidden.*</header>', html, re.S)
+assert "$('#relnote').hidden = !rel.newer" in js
+print("doors: a newer release shows in the bar, and only then")
 print("all doors checks passed")
