@@ -105,7 +105,8 @@ Send it? [y/N]
 - `sources` is every source the node reads, by name and never a kit or station id: each `source` in its sensors
   table, and the map layers it keeps (`openstreetmap`, `openaerialmap`, `sentinel-2`). Read fresh at each hello, so the
   list says how much of its context the node plays in (Tomas, 12 Oct 2026).
-- With `gh` logged in, it forks, commits the entry and opens the pull request, and prints its link. Without `gh`, it
+- With `gh` logged in, it forks, brings the fork's `main` up to fabcity's (`gh repo sync`, so an old fork never
+  sends back an old list, #365), commits the entry and opens the pull request, and prints its link. Without `gh`, it
   prints the entry and the link to edit `registry.json` on GitHub.
 - The merge is the approval, as `SPEC.md` §2 has always said. Nothing announces anything until a person merges.
 - `planetai hello --remove` opens the pull request that takes the entry out.

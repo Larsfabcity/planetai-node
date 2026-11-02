@@ -2465,7 +2465,12 @@ for k in ("name", "place", "cell", "lat", "lon", "operator", "contact", "since",
   local tmp; tmp="$(mktemp -d)"
   ( cd "$tmp" && gh repo fork fabcity/planetai-node --clone --default-branch-only -- --depth=1 -q >>"$LOG" 2>&1 ) \
     || fail "could not fork fabcity/planetai-node with gh. By hand: $edit"
-  local repo="$tmp/planetai-node" branch="hello-$name-$(date +%Y%m%d)"
+  local repo="$tmp/planetai-node" branch="hello-$name-$(date +%Y%m%d)" me; me="$(gh api user -q .login)"
+  # the fork's main is brought up to fabcity's first: a fork made weeks ago still holds the list as it was then, and a
+  # pull request cut from it undoes every entry merged since (#365, 2 Nov 2026)
+  ( cd "$repo" && gh repo sync "$me/planetai-node" --branch main >>"$LOG" 2>&1 \
+    && git fetch -q --depth=1 origin main >>"$LOG" 2>&1 && git checkout -qb "$branch" FETCH_HEAD ) \
+    || fail "could not bring your fork's main up to fabcity's (gh repo sync $me/planetai-node). By hand: $edit"
   printf '%s' "$entry" | REMOVE="$remove" REG="$repo/registry.json" json '
 import os, re
 reg = json.load(open(os.environ["REG"]))
@@ -2480,8 +2485,8 @@ out = json.dumps(reg, indent=2, ensure_ascii=False)
 out = re.sub(r"\[\s+([^\[\]{}]*?)\s+\]", lambda m: "[" + re.sub(r",\s+", ", ", m.group(1)) + "]", out)
 open(os.environ["REG"], "w").write(out + "\n")'
   local verb="list"; [[ -n "$remove" ]] && verb="unlist"
-  ( cd "$repo" && git checkout -qb "$branch" && git commit -qam "registry: $verb $name" && git push -qu origin "$branch" >>"$LOG" 2>&1 \
-    && gh pr create --repo fabcity/planetai-node --head "$(gh api user -q .login):$branch" --title "registry: $verb $name" \
+  ( cd "$repo" && git commit -qam "registry: $verb $name" && git push -qu origin "$branch" >>"$LOG" 2>&1 \
+    && gh pr create --repo fabcity/planetai-node --head "$me:$branch" --title "registry: $verb $name" \
        --body "Sent by \`planetai hello\` from $name. The merge is the approval (SPEC.md §2, docs/SPEC_hello.md §5)." ) \
     || fail "could not open the pull request. The change is in $repo; or by hand: $edit"
   rm -rf "$tmp"
