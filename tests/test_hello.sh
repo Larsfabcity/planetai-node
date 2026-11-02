@@ -82,5 +82,9 @@ out="$(run "" "" "new@x.es" n)"
 [[ "$out" == *"since     2026-09"* && "$out" == *"new@x.es"* && ! -e "$D/pr" ]] \
   && ok "a changed listing keeps the month it was first listed, and a no still sends nothing" || bad "since was reset: $out"
 
+# #367 was titled "list bayu-ungasan" for a node listed since September, and read as a new node
+out="$(run "" "" "new@x.es" y)"
+grep -q "registry: update mahon1" "$D/pr" 2>/dev/null && ok "a listed node's pull request says update, not list" || bad "a listed node's title: $(cat "$D/pr" 2>/dev/null) $out"
+
 [[ "$fails" == 0 ]] || { rm -rf "$D"; exit 1; }
 rm -rf "$D"

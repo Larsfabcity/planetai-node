@@ -6,6 +6,7 @@
   when they forked, so a fork made weeks ago sent back the list of that day: #365 put back an old operator and contact
   on `bayu-ungasan` and conflicted with `larsbcn`. Now it brings the fork's `main` up to fabcity's first
   (`gh repo sync`) and branches from that; a fork whose `main` has commits of its own stops with that command to run.
+  A node already listed now sends `registry: update <name>`, not `list`: #367 read as a new node for that reason.
 
 - **A wild pack's band shows on the default page.** A section a pack declares in its `pack.yaml` drew only in the
   classic layout (`?layout=classic`), so on the doors every wild pack's band was missing: on node #1 the rice from
