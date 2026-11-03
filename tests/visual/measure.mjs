@@ -3586,7 +3586,16 @@ async function doors() {
       await r.page.click('#asks button[data-v="why"]');
       const form = await wait(r.page, '#asks form input').then(() => true, () => false);
       ok(form, `${tag}: a button that asks showed no line for the words`);
-      if (form) { await r.page.fill('#asks form input', 'smaller waves'); await r.page.press('#asks form input', 'Enter'); await r.page.waitForTimeout(400); }
+      if (form) {
+        /* a phone's keyboard, or a turn, resizes the page and Now redraws: the words typed and the form stay, and the row
+           just answered does not come back (fix round 1, 3 Nov) */
+        await r.page.fill('#asks form input', 'smaller waves');
+        await r.page.setViewportSize({ width: w, height: (w < 768 ? 844 : 900) - 300 }); await r.page.waitForTimeout(400);
+        const kept = await r.page.evaluate(() => ({ v: (document.querySelector('#asks form input') || {}).value, back: !!document.querySelector('#asks button[data-v="why"]') }));
+        ok(kept.v === 'smaller waves' && !kept.back, `${tag}: a resize took the note form (${JSON.stringify(kept)})`);
+        if (kept.v) { await r.page.press('#asks form input', 'Enter'); await r.page.waitForTimeout(400);
+          ok(!(await r.page.$('#asks form')), `${tag}: the note was sent and its form stayed`); }
+      }
       ok(JSON.stringify(posts) === JSON.stringify([{ alert_id: 990001, choice: 'why', actor: '', note: '' }, { alert_id: 990001, choice: 'why', actor: '', note: 'smaller waves' }]),
         `${tag}: the presses posted ${JSON.stringify(posts)}`);
       if (shots) await r.page.screenshot({ path: path.join(OUT, `doors_asks_${tag}.jpg`), type: 'jpeg', quality: 78, fullPage: true });

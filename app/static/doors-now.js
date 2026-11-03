@@ -233,7 +233,10 @@ function packWord(w, lc) {
   return x[lc] || x.en || Object.values(x)[0] || '';
 }
 function drawAsks() {
-  const el = $('#asks'), lc = D.locale, asks = asksFrom(D.alerts, D.actions, Date.now());
+  const el = $('#asks'), f = el.querySelector('form');
+  /* the words somebody is typing outlive a redraw: Now redraws on every resize, and a phone's keyboard is one */
+  if (f && (f.contains(document.activeElement) || f.note.value)) return;
+  const lc = D.locale, asks = asksFrom(D.alerts, D.actions, Date.now());
   el.hidden = !asks.length;
   el.innerHTML = asks.map(({ alert: a, rows, answers }) => {
     const t = String(a.text || '').split('\n'), text = t.slice(0, 6).join('\n') + (t.length > 6 ? '\n…' : '');
@@ -244,15 +247,23 @@ function drawAsks() {
       + `<p class="dm" role="status"></p></div>`;
   }).join('');
 }
+function actorHere() {
+  try { return localStorage.getItem('planetai_actor') || ''; } catch (e) { return ''; }   /* no storage here */
+}
 /* one answer to a pack's alert, as the bot sends it; returns the node's refusal in words, or '' when it took it */
 async function askAnswer(alertId, choice, note) {
-  let actor = ''; try { actor = localStorage.getItem('planetai_actor') || ''; } catch (e) { /* no storage here */ }
   try {
     const r = await fetch('/actions', { method: 'POST', headers: { 'content-type': 'application/json', ...DOORS_AUTH() },
-      body: JSON.stringify({ alert_id: Number(alertId), choice, actor, note }) });
+      body: JSON.stringify({ alert_id: Number(alertId), choice, actor: actorHere(), note }) });
     if (r.ok) return '';
     return r.status === 401 || r.status === 403 ? WORDS.locked : ((await r.json().catch(() => ({}))).detail || `the node refused it (${r.status})`);
   } catch (e) { return WORDS.noreply; }
+}
+/* an answer the node took, kept on the page until the next load brings it back from /actions: a redraw before then
+   draws its row as answered */
+function askTaken(alertId, choice, actor) {
+  const a = (D.alerts || []).find(x => x.id === Number(alertId)), b = ((a && a.buttons) || []).flat().find(x => x.value === choice);
+  D.actions = [{ ts: new Date().toISOString(), alert_id: Number(alertId), stage: (b && b.stage) || 'acted', actor, note: null, choice }, ...(D.actions || [])];
 }
 /* a press answers; a button that asks something then shows one line for the words, sent with the same choice */
 document.addEventListener('click', async ev => {
@@ -261,12 +272,15 @@ document.addEventListener('click', async ev => {
   const box = b.closest('.decide'), out = box.querySelector('[role=status]'); b.disabled = true;
   const no = await askAnswer(b.dataset.al, b.dataset.v, '');
   if (no) { out.textContent = no; b.disabled = false; return; }
+  askTaken(b.dataset.al, b.dataset.v, actorHere());
   if (b.dataset.ask == null) return nowAgain().catch(() => { out.textContent = WORDS.noreply; });
   box.querySelectorAll('.ans').forEach(g => g.remove());
   out.insertAdjacentHTML('beforebegin', `<p class="dm">${said(b.dataset.ask)}</p><form class="ans" data-al="${esc(b.dataset.al)}" data-v="${esc(b.dataset.v)}">`
     + `<input name="note" maxlength="500" aria-label="${esc(b.dataset.ask)}" required><button>Send</button></form>`);
   box.querySelector('form input').focus();
 });
+/* leaving Now leaves an unsent note behind: coming back draws from what the node said */
+window.addEventListener('hashchange', () => { if (view() !== 'now') $('#asks').innerHTML = ''; });
 document.addEventListener('submit', async ev => {
   const f = ev.target.closest && ev.target.closest('#asks form[data-al]');
   if (!f) return;
@@ -274,6 +288,7 @@ document.addEventListener('submit', async ev => {
   const out = f.closest('.decide').querySelector('[role=status]'), s = f.querySelector('button'); s.disabled = true;
   const no = await askAnswer(f.dataset.al, f.dataset.v, f.note.value.trim());
   if (no) { out.textContent = no; s.disabled = false; return; }
+  f.remove();   /* sent: the redraw draws from the node again (a form left with its words would be kept) */
   await nowAgain().catch(() => { out.textContent = WORDS.noreply; });
 });
 

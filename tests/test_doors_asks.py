@@ -39,13 +39,13 @@ const pick = n => core.match(new RegExp('^const ' + n + ' = .*$', 'm'))[0], fn =
 const [alerts, actions, at] = JSON.parse(process.argv[1]), out = {};
 for (const locale of ['en', 'es', 'id']) {
   const els = {}, ctx = { D: { tz: 'Asia/Makassar', locale, alerts, actions }, doorsLocal: L.doorsLocal, Date: Object.assign(class extends Date {}, { now: () => Date.parse(at) }),
-    $: q => (els[q] ||= { hidden: true, innerHTML: '' }) };
+    $: q => (els[q] ||= { hidden: true, innerHTML: '', querySelector: () => null }) };
   vm.createContext(ctx);
   vm.runInContext(['esc', 'WD', 'loc', 'dayOf', 'dLabel', 'wdhm', 'said'].map(pick).join('\n') + '\n'
     + fn(now, 'asksFrom') + fn(now, 'packWord') + fn(now, 'drawAsks') + 'var got = asksFrom(D.alerts, D.actions, Date.now()); drawAsks();', ctx);
   out[locale] = { got: ctx.got, html: els['#asks'].innerHTML, hidden: els['#asks'].hidden };
 }
-const empty = { innerHTML: '', hidden: true }, c2 = { D: { tz: 'Asia/Makassar', locale: 'en', alerts: [], actions: [] }, doorsLocal: L.doorsLocal, Date, $: () => empty };
+const empty = { innerHTML: '', hidden: true, querySelector: () => null }, c2 = { D: { tz: 'Asia/Makassar', locale: 'en', alerts: [], actions: [] }, doorsLocal: L.doorsLocal, Date, $: () => empty };
 vm.createContext(c2);
 vm.runInContext(['esc', 'WD', 'loc', 'dayOf', 'dLabel', 'wdhm', 'said'].map(pick).join('\n') + '\n' + fn(now, 'asksFrom') + fn(now, 'packWord') + fn(now, 'drawAsks') + 'drawAsks();', c2);
 out.none = empty;
@@ -78,7 +78,7 @@ o2 = json.loads(r2.stdout)
 assert ">Voy</span></button>" in o2["es"]["html"] and ">Going</span></button>" in o2["id"]["html"] and ">Going</span></button>" in o2["en"]["html"], o2
 print("  a button says the page's locale, else English: never a dict")
 
-assert out["none"] == {"innerHTML": "", "hidden": True}, out["none"]
+assert {k: out["none"][k] for k in ("innerHTML", "hidden")} == {"innerHTML": "", "hidden": True}, out["none"]
 print("  nothing asked (or no token, so no /alerts): #asks stays hidden and empty")
 
 html = (ROOT / "app/static/doors.html").read_text()
@@ -88,13 +88,13 @@ src = (ROOT / "app/static/doors-now.js").read_text()
 assert "drawAsks();" in src.split("VIEWS.now = function")[1].split("};")[0]
 prog2 = r"""
 const fs = require('fs'), vm = require('vm'), now = fs.readFileSync('./app/static/doors-now.js', 'utf8');
-const fn = (src, n) => src.match(new RegExp('async function ' + n + '\\b[\\s\\S]*?\\n}\\n'))[0], sent = [], said = [];
+const fn = (src, n) => src.match(new RegExp('(?:async )?function ' + n + '\\b[\\s\\S]*?\\n}\\n'))[0], sent = [], said = [];
 const answers = [[200, { ok: true }], [200, { ok: true, kept: true }], [409, { detail: 'this question has closed' }], [403, {}]];
 const ctx = { sent, said, WORDS: { locked: 'LOCKED', noreply: 'NOREPLY' }, DOORS_AUTH: () => ({ authorization: 'Bearer t' }),
   localStorage: { getItem: k => k === 'planetai_actor' ? 'ibu' : null },
   fetch: async (u, o) => { sent.push([u, o.method, o.headers, JSON.parse(o.body)]); const [st, j] = answers.shift(); return { ok: st === 200, status: st, json: async () => j }; } };
 vm.createContext(ctx);
-vm.runInContext(fn(now, 'askAnswer') + `(async () => { for (const n of ['', 'too big', '', '']) said.push(await askAnswer('1', 'why', n)); })()`, ctx);
+vm.runInContext(fn(now, 'actorHere') + fn(now, 'askAnswer') + `(async () => { for (const n of ['', 'too big', '', '']) said.push(await askAnswer('1', 'why', n)); })()`, ctx);
 setTimeout(() => console.log(JSON.stringify({ sent, said })), 50);
 """
 r3 = subprocess.run(["node", "-e", prog2], capture_output=True, text=True, cwd=ROOT)
@@ -105,5 +105,44 @@ assert o3["sent"][0] == ["/actions", "POST", {"content-type": "application/json"
 assert o3["sent"][1][3]["note"] == "too big" and o3["said"] == ["", "", "this question has closed", "LOCKED"], o3
 print("  #asks sits under What to do, Now draws it on every visit, and a press is the bot's POST /actions, with the token, the actor and then the note")
 print("  a kept answer is taken; a 409 says the node's own words, a 403 says the screen is locked")
+
+# Fix round 1: any redraw of Now (a resize: a phone's keyboard opening, a rotation) ran drawAsks() over the note form,
+# and drew the row just answered again, because D.actions was the load before the press.
+prog3 = r"""
+const fs = require('fs'), vm = require('vm');
+const L = require('./app/static/doors-load.js');
+const core = fs.readFileSync('./app/static/doors-core.js', 'utf8'), now = fs.readFileSync('./app/static/doors-now.js', 'utf8');
+const pick = n => core.match(new RegExp('^const ' + n + ' = .*$', 'm'))[0], fn = (src, n) => src.match(new RegExp('function ' + n + '\\b[\\s\\S]*?\\n}\\n'))[0];
+const [alerts] = JSON.parse(process.argv[1]), out = [];
+const typing = { id: 'input' }, form = { note: { value: '' }, contains: e => e === typing };
+const el = { hidden: true, innerHTML: '', open: false, querySelector: q => q === 'form' && el.open ? form : null };
+const ctx = { D: { tz: 'Asia/Makassar', locale: 'en', alerts, actions: [] }, doorsLocal: L.doorsLocal, $: () => el, document: { activeElement: null } };
+vm.createContext(ctx);
+vm.runInContext(['esc', 'WD', 'loc', 'dayOf', 'dLabel', 'wdhm', 'said'].map(pick).join('\n') + '\n'
+  + fn(now, 'asksFrom') + fn(now, 'packWord') + fn(now, 'drawAsks') + fn(now, 'askTaken'), ctx);
+const snap = () => out.push({ html: el.innerHTML, hidden: el.hidden, n: ctx.D.actions.length });
+vm.runInContext('drawAsks()', ctx); snap();                                             // 0: the alert, both rows
+vm.runInContext("askTaken('1', 'why', 'ibu')", ctx);                                    // the press was taken
+el.open = true; ctx.document.activeElement = typing; el.innerHTML = 'FORM';
+vm.runInContext('drawAsks()', ctx); snap();                                             // 1: focused: kept
+ctx.document.activeElement = null; form.note.value = 'smaller';
+vm.runInContext('drawAsks()', ctx); snap();                                             // 2: words typed: kept
+form.note.value = ''; vm.runInContext('drawAsks()', ctx); snap();                       // 3: neither: drawn again, without the row
+out.push(ctx.D.actions[0]);
+console.log(JSON.stringify(out));
+"""
+two = [dict(ALERTS[0], buttons=[[B("Going", "going")], [B("Tell me why", "why", ask={"en": "What would make it better?"})]])]
+r4 = subprocess.run(["node", "-e", prog3, json.dumps([two])], capture_output=True, text=True, cwd=ROOT)
+assert r4.returncode == 0, r4.stderr[-2000:]
+o4 = json.loads(r4.stdout)
+assert 'data-v="why"' in o4[0]["html"] and 'data-v="going"' in o4[0]["html"], o4[0]
+assert o4[1]["html"] == "FORM" and o4[2]["html"] == "FORM", (o4[1], o4[2])
+print("  a redraw while the note form has focus or words keeps the form as it is")
+assert 'data-v="why"' not in o4[3]["html"] and 'data-v="going"' in o4[3]["html"] and "answered: Tell me why by ibu at" in o4[3]["html"], o4[3]
+a = o4[4]
+assert (a["alert_id"], a["choice"], a["actor"], a["stage"]) == (1, "why", "ibu", "acted") and a["ts"], a
+print("  a press is recorded on the page at once, so any redraw before the next load draws its row as answered")
+src_now = (ROOT / "app/static/doors-now.js").read_text()
+assert "addEventListener('hashchange'" in src_now and "view() !== 'now'" in src_now, "leaving Now does not drop the note form"
 print("doors asks: a pack's buttons draw under What to do, answered with the bot's own POST /actions")
 sys.exit(0)
