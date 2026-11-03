@@ -24,7 +24,7 @@ node. Raw readings stay on the machine; only summaries travel.
 > report decides what gets fixed first. Write to **info@fab.city** with what broke, what helped, what did not.
 
 ```bash
-curl -fsSL planetai.fab.city/install | bash
+curl -fsSL https://planetai.fab.city/install | bash
 ```
 
 Four questions, two minutes, running. Then `planetai telegram` for the alerts and `planetai ui` for the dashboard.
@@ -70,7 +70,7 @@ satellite sources; water and soil have no pack yet, and no node has handed a job
 - **Keeps the data where it was made.** Local database, nightly backups a NAS can collect, an open daily export you decide
   where to send. A screen without the token reads "Room A" and "Sensor 1", never the house's own names.
 - **Grows by folders.** Air, heat, coast, land, place (what is around you, from OpenStreetMap, in PostGIS), fires (NASA
-  FIRMS), the ground's heat from orbit (Landsat and MODIS) and open-data packs ship: 18 core packs. Water, energy, noise,
+  FIRMS), the ground's heat from orbit (Landsat and MODIS) and open-data packs ship, and Bali Air Dispatch's stations as a pack of their own: 19 core packs. Water, energy, noise,
   classroom CO₂ are a folder of rules each, written by whoever needs them, for their place.
 
 Node #1, `bayu-ungasan`, has run in Kuta Selatan, Bali, since 2 September 2026 (above). Node #2 has run in Menorca since
@@ -89,7 +89,7 @@ docs/     getting a node running   START_HERE · PLATFORMS · REVIVE_A_LAPTOP ·
           extending it             PACKS · PACK_IDEAS · SOURCES · DEVELOPING
           testing a beta           BETA_TESTER_GUIDE · FAB26_EXPERIMENT
           releasing it             WORKFLOW · NEXT_RELEASE · SIGNING
-          specs, each with status  SPEC_custody · SPEC_identity · SPEC_rho · SPEC_discovery · SPEC_decide · SPEC_alerts · SPEC_dashboard_events · SPEC_event_led_state · SPEC_dashboard_figures · SPEC_language · SPEC_journeys · SPEC_mobile · SPEC_hello · SPEC_eyes · SPEC_species · SPEC_inventory · SPEC_learn · SPEC_fablab · SPEC_radio
+          specs, each with status  SPEC_custody · SPEC_identity · SPEC_rho · SPEC_discovery · SPEC_decide · SPEC_alerts · SPEC_dashboard_events · SPEC_event_led_state · SPEC_dashboard_figures · SPEC_language · SPEC_journeys · SPEC_mobile · SPEC_hello · SPEC_eyes · SPEC_species · SPEC_inventory · SPEC_learn · SPEC_fablab · SPEC_radio · SPEC_place_analyses · SPEC_terrain · SPEC_sensors
           proposed, then decided   proposals/ · decisions/
           the documentation site   site/ (planetai.fab.city/docs)
           the page's design rounds design/ (not shipped to nodes)

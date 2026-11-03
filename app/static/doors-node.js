@@ -14,7 +14,6 @@
 let FLOWOBS = null;
 /* the verdict: Working, or Needs a look and why. Heard is a reading in the last hour (/stats silent_minutes); a poll is
    stale after 15 minutes of /issues' as_of, the Wall's rule, so a capture is judged at its own time. */
-const ago = m => m < 90 ? `${Math.round(m)} min` : m < 48 * 60 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} days`;
 function verdict(D, src) {
   const h = D.health, heard = s => Object.values(D.stats15[s.sensor_id] || {}).some(v => v[1] != null && v[1] <= 60);
   const own = D.sensors.filter(s => s.local && s.kind === 'sensor'), pub = D.sensors.filter(s => !s.local && s.kind === 'sensor');
@@ -31,7 +30,7 @@ VIEWS.node = function () {
   FLOWOBS && FLOWOBS.disconnect(); CLOCK.off('node-flow');
   const R = D.registry, h = D.health;
   const say = src => { const v = verdict(D, src);
-    return `<h1 data-learn="1" class="verdict ${v.ok ? '' : 'bad'}">${v.head}.</h1><p class="vline said" data-role="sentence">${esc(v.text)}`
+    return `<h1 class="verdict ${v.ok ? '' : 'bad'}">${v.head}.</h1><p class="vline said" data-role="sentence">${esc(v.text)}`
       + `${src && src.missing ? ` <a href="#setup">To finish setting up →</a>` : ''}</p>`; };
   $('#nodehead').innerHTML = `<div class="k">Node · ${esc(R.name)}, in ${esc(R.place)}</div><div id="verdict">${say(null)}</div>
     <p class="lede mono">planetai-node ${esc(h.version)} · up ${fmt(h.uptime_s / 3600, 1)} h · ${h.ingested.toLocaleString('en')} readings since the restart · cell ${esc(h.cell.id)} · ${esc(h.tz)}</p>`;

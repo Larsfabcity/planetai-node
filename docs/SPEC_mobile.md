@@ -137,6 +137,12 @@ Reads `/issues` and `/issues/days?days=7` through `buildD()`. The lead issue is 
    its `title`. Pressing a row makes it the lead of this section, redraws 1 to 4 and scrolls to the title. Coast and
    land, which have no hours, show their region value and `title`, as `rowsValues()` does for them.
 
+6. **A pack's declared bands** (added 1 Nov 2026, after PR #363 put them on the doors' Now). `buildD().sections`,
+   drawn by `declaredBands()` in `doors-load.js`, the renderer the doors use, so the band is the doors' band to the
+   character. Each sits by its stage: `decide` and `act` under the Decide card, `observe` under the other issues,
+   `measure` after them, because the phone has no Did it work. Add an image stays last.
+   `tests/test_mobile_sections.py` and the `mobile` pass of the visual gate hold the order.
+
 Every number is a field of the wire. The page compares nothing against the line and counts nothing; the crossed
 mark, if any, is the one the engine's `plain` carries.
 
@@ -273,7 +279,7 @@ parameter, and this version adds none.
 | file | change |
 |---|---|
 | `app/static/mobile.html` | new: the shell, one inline `<style>` (the doors' pattern), the boot face, the three sections' mounts |
-| `app/static/mobile.js` | new: load, draw, answer, unlock, refresh. Copies the seven one-line helpers it needs (`esc`, `fmt`, `hhmm`, `said`, `sign`, `prov`, `num`) from `doors-core.js` rather than loading it, because `doors-core.js` boots the doors on load. A third page that needs them is the time to lift them into one file |
+| `app/static/mobile.js` | new: load, draw, answer, unlock, refresh. Copies the one-line helpers it needs (`esc`, `fmt`, `hhmm`, `said`, `sign`, `prov`, `num`, and since 1 Nov `ago`) from `doors-core.js` rather than loading it, because `doors-core.js` boots the doors on load. A third page that needs them is the time to lift them into one file |
 | `app/static/doors-load.js` | `loadD(routes = DOORS_ROUTES)`: the phone passes its own subset (`issues`, `days`, `health`, `settings`, `stats`, `sensors`, `reach`, `observations`, `earth`) and never asks for the token-only three. `buildD()` already tolerates every missing part |
 | `app/static/doors.html` | the rule and the redirect, first in `<head>`; the "Phone view" link in the header |
 | `app/main.py` | `ui()` serves `mobile.html` for `layout=mobile`; `COMPANIONS` gains `mobile.js` |
@@ -320,7 +326,7 @@ the gate once.
 **v1, one pull request: the phone page.** §4 to §8 as written. Releasable alone: on a desk nothing changes, and on a
 phone the worst case is the page with "Full dashboard" at its foot.
 
-**v1.1, its own pull request: gzip.** Starlette's `GZipMiddleware` on JSON, JavaScript and CSS above 1 kB, excluding
+**v1.1, its own pull request: gzip.** (Built 24 Oct 2026, level 5, `/mcp` and already-compressed types left out.) Starlette's `GZipMiddleware` on JSON, JavaScript and CSS above 1 kB, excluding
 `/mcp`, `text/event-stream` and any response that already sets `content-encoding` (the vector tiles). It takes
 `/issues` from 507 kB to about 73 kB for every screen, the doors included, and is the change that brings the title
 under 1.5 s. Whether the Starlette in the app image already skips event streams and pre-encoded responses is

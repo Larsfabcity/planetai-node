@@ -2955,7 +2955,7 @@ const docFor = u => {
   const layout = u.searchParams.get('layout');
   return layout === 'mobile' ? 'mobile.html' : layout === 'classic' ? 'index.html' : 'doors.html';
 };
-const openRig = async ({ w = 390, h = 844, touch = true, dark = false, token = null, mem = null, throttle = false, locked = false, wireDays = null, admin = null } = {}) => {
+const openRig = async ({ w = 390, h = 844, touch = true, dark = false, token = null, mem = null, throttle = false, locked = false, wireDays = null, admin = null, sections = null, alerts = null } = {}) => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: touch, hasTouch: touch,
     deviceScaleFactor: 1, colorScheme: dark ? 'dark' : 'light', reducedMotion: 'reduce' });
@@ -2977,6 +2977,20 @@ const openRig = async ({ w = 390, h = 844, touch = true, dark = false, token = n
         return route.fulfill({ status: 200, contentType: 'application/json',
           body: JSON.stringify({ ...snap, issues_days: derived }) });
       }
+    }
+    /* sections: the capture with these declared bands in /issues, as the node serves a pack's sections */
+    /* alerts: these first in the capture's /alerts, as a node serves an alert a pack's rule sent with buttons */
+    const am = alerts && u.pathname.match(/^\/issues\/fixtures\/([a-z0-9][a-z0-9._-]{0,63})$/);
+    if (am) {
+      const snap = computeNodeData(decodeURIComponent(am[1])).snapshot;
+      if (snap) return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ ...snap, alerts: [...alerts, ...(snap.alerts || [])] }) });
+    }
+    const sm = sections && u.pathname.match(/^\/issues\/fixtures\/([a-z0-9][a-z0-9._-]{0,63})$/);
+    if (sm) {
+      const snap = computeNodeData(decodeURIComponent(sm[1])).snapshot;
+      if (snap) return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ ...snap, issues: { ...snap.issues, sections } }) });
     }
     const doc = docFor(u);
     let file = doc || (u.pathname.startsWith('/static/') ? u.pathname.slice(8) : null);
@@ -3209,6 +3223,44 @@ async function mobile() {
   }
   console.error('  mobile · locked');
 
+  /* 6b · a pack's declared bands (1 Nov 2026: until then the phone drew none). Decide and act under the Decide card,
+     observe under the other issues, measure last; each row a 44 px readout, nothing scrolls sideways at 320 or 390. */
+  {
+    const ro = (metric, value, en) => ({ metric, sensor_id: 'rig-square', unit: 'ha', dp: 0, value, label: { en }, source: 'Sentinel-2', provenance: 'partial', age_minutes: 4000 });
+    const SEC = [
+      { id: 'rig-rice', pack: 'rig', stage: 'observe', order: 48, title: { en: 'Rice around this node, from Sentinel-2' }, expected: 3,
+        note: { en: 'Declared for the gate: a long note, so the small print has to wrap inside the column it is in and not push the page sideways.' },
+        readouts: [ro('rice_ha', 639, 'rice'), ro('rice_lost_ha', 7.6, 'green a year ago, bare or built now')] },
+      { id: 'rig-ask', pack: 'rig', stage: 'decide', title: { en: 'What the rig would ask' }, readouts: [ro('a', 2, 'two')] },
+      { id: 'rig-did', pack: 'rig', stage: 'measure', title: { en: 'What the rig measured' }, expected: 1, readouts: [ro('m', 1, 'one')] }];
+    for (const w of [320, 390]) for (const dark of [false, true]) {
+      const tag = `${w}_${dark ? 'dark' : 'paper'}_sections`;
+      const r = await openRig({ w, dark, sections: SEC });
+      await r.page.goto(`${POP}/?layout=mobile&${FIXQ}`, { waitUntil: 'domcontentloaded' });
+      const got = await r.page.waitForSelector('#decl-rig-rice .row', { timeout: 15000 }).then(() => true, () => false);
+      ok(got, `${tag}: the phone drew no declared band`);
+      if (got) {
+        const m = await r.page.evaluate(() => {
+          const b = id => document.getElementById(id), after = (x, y) => !!(x && y && (x.compareDocumentPosition(y) & 4));
+          const rowsB = [...document.querySelectorAll('#now-v .rowb')], rows = [...document.querySelectorAll('#now-v .row.decl')];
+          return { ask: after(document.querySelector('#now-v .decide'), b('decl-rig-ask')) && after(b('decl-rig-ask'), rowsB[0] || b('decl-rig-rice')),
+            obs: after(rowsB[rowsB.length - 1] || b('decl-rig-ask'), b('decl-rig-rice')), did: after(b('decl-rig-rice'), b('decl-rig-did')),
+            h: rows.map(x => Math.round(x.getBoundingClientRect().height)), waiting: b('decl-rig-rice').textContent.includes('1 of the 3 readings'),
+            wide: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+        });
+        ok(m.ask, `${tag}: the decide band is not between the Decide card and the other issues`);
+        ok(m.obs, `${tag}: the observe band is not under the other issues`);
+        ok(m.did, `${tag}: the measure band does not close Now`);
+        ok(m.h.length === 4 && m.h.every(x => x >= 44), `${tag}: the bands' rows are ${m.h.join(',')} px (four of at least 44)`);
+        ok(m.waiting, `${tag}: the band does not say how many readings have not arrived`);
+        ok(m.wide <= 0, `${tag}: the phone scrolls ${m.wide}px sideways with a declared band`);
+        if (process.env.PAI_DOORS_SHOTS === '1') await r.page.screenshot({ path: path.join(OUT, `mobile_sections_${tag}.jpg`), type: 'jpeg', quality: 78, fullPage: true });
+      }
+      await r.browser.close();
+    }
+    console.error('  mobile · declared bands: 4 renders');
+  }
+
   /* 7 · the shots: mobile_populated_390 in both registers */
   for (const dark of [false, true]) {
     const r = await openRig({ dark });
@@ -3333,7 +3385,9 @@ async function doors() {
     await r.page.waitForTimeout(400);
     /* the loading screen holds at least 1.2 s (ASKING's floor); a shot taken under it is a shot of nothing */
     ok(await r.page.waitForSelector('#asking:not(.on)', { state: 'attached', timeout: 6000 }).then(() => true, () => false), `${tag}: the loading screen never closed`);
-    const tabs = await r.page.evaluate(() => [...document.querySelectorAll('#dnav a')].map(a => a.getAttribute('href')));
+    /* the tabs drawn in this page, Workbench among them: the node's /workbench in a frame (Tomas, 27 Oct 2026) */
+    const tabs = await r.page.evaluate(() => [...document.querySelectorAll('#dnav a[href^="#data/"]')].map(a => a.getAttribute('href')));
+    ok(tabs.includes('#data/workbench'), `${tag}: Data has no Workbench tab`);
     ok(tabs.length >= 4, `${tag}: Data lists ${tabs.length} tabs`);
     const seen = new Set();
     for (const t of tabs) {
@@ -3350,6 +3404,10 @@ async function doors() {
       for (const id of g.vis) { ok(!seen.has(id), `${tag} ${t}: #${id} is drawn on two tabs`); seen.add(id); }
       ok(!g.small, `${tag} ${t}: ${g.small} tab(s) under 44 × 44 px`);
       const o = await overflowAt(r.page); ok(o <= 1, `${tag} ${t}: the page scrolls ${o}px sideways`);
+      if (t === '#data/workbench') {
+        const f = await r.page.evaluate(() => { const x = document.querySelector('#d-workbench iframe'); return x && { src: x.getAttribute('src'), allow: x.getAttribute('allow'), w: x.getBoundingClientRect().width }; });
+        ok(f && /^\/workbench(#|$)/.test(f.src) && /\bserial\b/.test(f.allow || '') && f.w > 200, `${tag}: the Workbench tab must frame /workbench with USB allowed (${JSON.stringify(f)})`);
+      }
       if (t === '#data/readings') {
         await r.page.evaluate(() => window.scrollTo(0, 1600)); await r.page.waitForTimeout(150);
         const top = await r.page.evaluate(() => document.getElementById('dnav').getBoundingClientRect().top);
@@ -3431,6 +3489,117 @@ async function doors() {
       const c2 = await r.page.evaluate(() => { const p = document.getElementById('sconfirm'); return p && !p.hidden; });
       ok(k && !c2 && puts.length === 1, `a plain setting (${k}) asked first, or did not save (${puts.length} PUT)`);
       said.push(`the consequences step: SHARE_LEVEL=open asks and sends nothing until Save anyway; ${k} saves at once`);
+    }
+    /* Learn this page, on every door: each part the door shows is listed once, in the order it is seen, with what the
+       docs say about it (the quote), and a link to the section; a part on a hidden tab or view is not listed */
+    if (!dark) {
+      await go(r.page, '#now'); await r.page.click('#askbtn'); await r.page.check('#learn');
+      const WANT = { '#now': ['now-sentence', 'now-todo', 'now-rows'], '#place': ['place-head', 'place-layers', 'place-map', 'place-tools'],
+        '#node': ['node-verdict', 'node-flow', 'node-refusals'], '#data/readings': ['data-head', 'data-readings', 'data-week'],
+        '#data/home': ['data-images', 'data-things'], '#setup': ['settings', 'setup-sections', 'setup-save'], '#wall': ['wall-never', 'wall-sentence', 'wall-map'] };
+      const NOT = { '#place': ['place-orbit', 'place-changed', 'earth'], '#data/home': ['data-ledger', 'data-readings'], '#wall': ['bar', 'foot'] };
+      let parts = 0;
+      for (const [h, want] of Object.entries(WANT)) {
+        await go(r.page, h); await r.page.waitForTimeout(h === '#setup' || h === '#wall' ? 1200 : 600);
+        const L = await r.page.evaluate(() => {
+          const items = [...document.querySelectorAll('#learnlist li')], ap = document.getElementById('askpane');
+          return { got: items.map(li => li.dataset.learnItem), nums: items.map(li => li.querySelector('i').textContent),
+            bare: items.filter(li => !(li.querySelector('blockquote') || {}).textContent || !li.querySelector('a[href^="https://planetai.fab.city/docs/"]')).map(li => li.dataset.learnItem),
+            unknown: items.map(li => li.dataset.learnItem).filter(k => !D.learn[k]), wide: ap.scrollWidth - ap.clientWidth };
+        });
+        parts += L.got.length;
+        for (const k of want) ok(L.got.includes(k), `${tag} ${h}: learn does not list ${k} (${L.got.join(' ')})`);
+        for (const k of NOT[h] || []) ok(!L.got.includes(k), `${tag} ${h}: learn lists ${k}, which is not on the screen`);
+        ok(new Set(L.got).size === L.got.length, `${tag} ${h}: a part is listed twice (${L.got.join(' ')})`);
+        ok(L.nums.every((n, i) => +n === i + 1), `${tag} ${h}: the parts are numbered ${L.nums.join(',')}`);
+        ok(!L.bare.length, `${tag} ${h}: ${L.bare.join(', ')} listed without the docs' quote or the link to its section`);
+        ok(!L.unknown.length, `${tag} ${h}: ${L.unknown.join(', ')} has no mark in learn.json`);
+        ok(L.wide <= 1, `${tag} ${h}: the learn list scrolls ${L.wide}px sideways`);
+        if (shots && h === '#now') await r.page.screenshot({ path: path.join(OUT, `doors_learn_${tag}.jpg`), type: 'jpeg', quality: 78 });
+      }
+      await r.page.click('#askclose');
+      said.push(`${tag} learn: ${parts} parts over seven doors and tabs, each with its quote and docs link`);
+    }
+    await r.browser.close();
+  }
+  /* A pack's declared band on Now (31 Oct 2026: until then the doors drew none). An observe band sits in Around the
+     house under the issue rows, a measure band under Did it work; each row a 44 px readout, nothing scrolls sideways. */
+  const ro = (metric, value, en) => ({ metric, sensor_id: 'rig-square', unit: 'ha', dp: 0, value, label: { en }, source: 'Sentinel-2', provenance: 'partial', age_minutes: 4000 });
+  const SEC = [
+    { id: 'rig-rice', pack: 'rig', stage: 'observe', order: 48, title: { en: 'Rice around this node, from Sentinel-2' }, expected: 3,
+      note: { en: 'Declared for the gate: a long note, so the small print has to wrap inside the column it is in and not push the page sideways.' },
+      readouts: [ro('rice_ha', 639, 'rice'), ro('rice_lost_ha', 7.6, 'green a year ago, bare or built now')] },
+    { id: 'rig-did', pack: 'rig', stage: 'measure', title: { en: 'What the rig measured' }, expected: 1, readouts: [ro('m', 1, 'one')] }];
+  for (const w of [390, 1440]) for (const dark of [false, true]) {
+    const tag = `${w}_${dark ? 'dark' : 'paper'}_sections`;
+    const r = await openRig({ w, h: w < 768 ? 844 : 900, touch: w < 768, dark, sections: SEC });
+    /* the doors on purpose: a phone with no remembered layout is sent to the phone page, whose bands `mobile` measures */
+    await r.page.goto(`${POP}/?layout=doors&fixture=${FIXTURE}#now`, { waitUntil: 'domcontentloaded' });
+    const got = await wait(r.page, '#decl-rig-rice .row').then(() => true, () => false);
+    await r.page.waitForSelector('#asking:not(.on)', { state: 'attached', timeout: 6000 }).catch(() => {});
+    ok(got, `${tag}: Now drew no declared band`);
+    if (got) {
+      const m = await r.page.evaluate(() => {
+        const b = id => document.getElementById(id), rows = [...b('decl-rig-rice').querySelectorAll('.row')];
+        return { rcol: !!b('decl-rig-rice').closest('.rcol'), under: !!(b('rows').compareDocumentPosition(b('decl-rig-rice')) & 4),
+          did: !!b('decl-rig-did') && !!(b('decide').compareDocumentPosition(b('decl-rig-did')) & 4) && !b('decl-rig-did').closest('.rcol'),
+          h: rows.map(x => Math.round(x.getBoundingClientRect().height)), waiting: b('decl-rig-rice').textContent.includes('1 of the 3 readings'),
+          wide: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      });
+      ok(m.rcol && m.under, `${tag}: the observe band is not under Around the house's rows`);
+      ok(m.did, `${tag}: the measure band is not in the left column after What to do`);
+      ok(m.h.length === 2 && m.h.every(x => x >= 44), `${tag}: the band's rows are ${m.h.join(',')} px (two of at least 44)`);
+      ok(m.waiting, `${tag}: the band does not say how many readings have not arrived`);
+      ok(m.wide <= 1, `${tag}: Now scrolls ${m.wide}px sideways with a declared band`);
+      if (shots) await r.page.screenshot({ path: path.join(OUT, `doors_sections_${tag}.jpg`), type: 'jpeg', quality: 78, fullPage: true });
+      said.push(`${tag}: the declared bands sit beside their stage`);
+    }
+    await r.browser.close();
+  }
+  /* What a pack asks (3 Nov 2026): an alert sent with buttons draws under What to do with the token, each row a strip
+     of 44 px buttons; a press is POST /actions {alert_id, choice}, and a button that asks shows one line for the words. */
+  const W = (en, value, ask = null) => ({ text: { en }, value, stage: 'acted', ask });
+  const ASK = [{ id: 990001, ts: new Date().toISOString(), rule_id: 'rig/ask', level: 'info', acted_at: null,
+    text: 'The rig asks something.\nA second line.\n3\n4\n5\n6\nA seventh line nobody reads.',
+    buttons: [[W('Going', 'going'), W('Not today, the swell is far too big for me', 'skip')], [W('Tell me', 'why', { en: 'What would make it better?' })]] }];
+  for (const w of [390, 1440]) for (const dark of [false, true]) {
+    const tag = `${w}_${dark ? 'dark' : 'paper'}_asks`;
+    const r = await openRig({ w, h: w < 768 ? 844 : 900, touch: w < 768, dark, admin: ADMIN, alerts: ASK });
+    const posts = [];
+    await r.page.route('**/actions', route => route.request().method() === 'POST'
+      ? (posts.push(route.request().postDataJSON()), route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' })) : route.fallback());
+    await r.page.goto(`${POP}/?layout=doors&fixture=${FIXTURE}#now`, { waitUntil: 'domcontentloaded' });
+    const got = await wait(r.page, '#asks button[data-al]').then(() => true, () => false);
+    await r.page.waitForSelector('#asking:not(.on)', { state: 'attached', timeout: 6000 }).catch(() => {});
+    ok(got, `${tag}: Now drew no pack buttons`);
+    if (got) {
+      const m = await r.page.evaluate(() => {
+        const a = document.getElementById('asks'), bs = [...a.querySelectorAll('button')];
+        return { under: !!(document.getElementById('decide').compareDocumentPosition(a) & 4) && !a.closest('.rcol'), n: bs.length,
+          small: bs.map(b => b.getBoundingClientRect()).filter(x => x.height < 44 || x.width < 44).length,
+          seventh: a.textContent.includes('seventh'), wide: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      });
+      ok(m.under, `${tag}: #asks is not under What to do`);
+      ok(m.n === 3 && !m.small, `${tag}: ${m.n} buttons, ${m.small} under 44 × 44 px`);
+      ok(!m.seventh, `${tag}: the alert's seventh line is drawn`);
+      ok(m.wide <= 1, `${tag}: Now scrolls ${m.wide}px sideways with a pack's buttons`);
+      await r.page.click('#asks button[data-v="why"]');
+      const form = await wait(r.page, '#asks form input').then(() => true, () => false);
+      ok(form, `${tag}: a button that asks showed no line for the words`);
+      if (form) {
+        /* a phone's keyboard, or a turn, resizes the page and Now redraws: the words typed and the form stay, and the row
+           just answered does not come back (fix round 1, 3 Nov) */
+        await r.page.fill('#asks form input', 'smaller waves');
+        await r.page.setViewportSize({ width: w, height: (w < 768 ? 844 : 900) - 300 }); await r.page.waitForTimeout(400);
+        const kept = await r.page.evaluate(() => ({ v: (document.querySelector('#asks form input') || {}).value, back: !!document.querySelector('#asks button[data-v="why"]') }));
+        ok(kept.v === 'smaller waves' && !kept.back, `${tag}: a resize took the note form (${JSON.stringify(kept)})`);
+        if (kept.v) { await r.page.press('#asks form input', 'Enter'); await r.page.waitForTimeout(400);
+          ok(!(await r.page.$('#asks form')), `${tag}: the note was sent and its form stayed`); }
+      }
+      ok(JSON.stringify(posts) === JSON.stringify([{ alert_id: 990001, choice: 'why', actor: '', note: '' }, { alert_id: 990001, choice: 'why', actor: '', note: 'smaller waves' }]),
+        `${tag}: the presses posted ${JSON.stringify(posts)}`);
+      if (shots) await r.page.screenshot({ path: path.join(OUT, `doors_asks_${tag}.jpg`), type: 'jpeg', quality: 78, fullPage: true });
+      said.push(`${tag}: a pack's buttons under What to do, answered and then the note`);
     }
     await r.browser.close();
   }

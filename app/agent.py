@@ -80,7 +80,7 @@ def health_check() -> dict:
     fresh = dumps and (datetime.now(timezone.utc) - datetime.fromtimestamp(dumps[-1].stat().st_mtime, timezone.utc)) < timedelta(days=2)
     chk("a backup in the last 2 days", fresh, "run `planetai backup` on the node and check `crontab -l | grep backup`")
     # judge each local sensor by whether its ambient channels are still moving, not by its timestamp: a dead
-    # channel's kit keeps stamping fresh times over the same frozen value (see packs/trust/rules.yml, channel_dead)
+    # channel's kit keeps stamping fresh times over the same frozen value (see config/rules.yml, trust/channel_dead)
     try:
         trust = _get("/trust")
     except Exception as e:  # noqa: BLE001 — this check's own fetch must not take down every other check below it
@@ -317,13 +317,15 @@ def export_day(day: str | None = None) -> dict:
 def run_pack_script(pack: str, script: str, args: list[str] | None = None, agent: str = "agent") -> dict:
     """Run a script a pack ships (e.g. earth-engine verify, earth-engine timelapse). Runs in the app container; output files land in out/.
     Returns stdout/stderr and the exit code."""
+    import packs as _packs
     pack, script = Path(pack).name, Path(script).name
     p = PACKS_DIR / pack / (script + ".py")
     reachable = agent_scripts()
     if f"{pack}/{script}" not in reachable:
         why = (f"{pack}/{script} is in a wild pack that does not list it under agent_scripts:, so only the node's own "
                f"terminal runs it: planetai run {pack} {script}") if p.is_file() and (p.parent / ".wild").is_file() \
-            else f"no such script: {pack}/{script}"
+            else (f"{pack} is not loaded on this node (PACKS_ENABLED, or its requires:), so its scripts do not run"
+                  if p.is_file() and pack not in {d.name for d in _packs._enabled()} else f"no such script: {pack}/{script}")
         return {"error": why, "available": reachable}
     r = subprocess.run(["python", str(p), *(args or [])], capture_output=True, text=True, timeout=900, env={**os.environ, "PACK_OUT": "/app/out"})
     return {"exit": r.returncode, "stdout": r.stdout[-6000:], "stderr": r.stderr[-2000:], "by": agent}

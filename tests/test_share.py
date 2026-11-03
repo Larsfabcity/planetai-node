@@ -14,7 +14,7 @@ import ast
 import os
 import re
 
-SRC = open("app/main.py").read()
+SRC = open("app/main.py").read() + open("app/auth.py").read()   # auth.py: the allowlists, since 22 Oct
 SETTINGS = open("app/settings.py").read()
 ENV = open(".env.example").read()
 # The page is three files since the renderer landed: a skeleton, a script and a
@@ -237,6 +237,15 @@ assert (s0["lat"], s0["lon"]) == main._coarse(-8.6478291, 115.1385412), \
     "open: the household's own sensor must stand at its cell's centre for an untrusted reader (R25)"
 # 15 Oct: a house on a cell's edge has sensors in the next cell; they stand at the house's point, not ~700 m off.
 _h = lan.get("/health").json()
+# /health names its keys (docs/site/api.md). It spread the timers' whole `state` until 21 Oct 2026: the node list,
+# the bot's username and 12 kB of GBIF maps went to every reader, every ~20 s, from every screen.
+main.state.update(registry={"nodes": [1]}, bot={"username": "x_bot"}, griis={"marks": 1}, others={"cells": {}},
+                  learned_on="2026-10-21", bootstrap=[{"key": "k"}])
+_hk = lan.get("/health").json()
+assert not {"registry", "bot", "griis", "others", "learned_on", "bootstrap"} & set(_hk), sorted(_hk)
+assert {"ok", "node", "version", "polls", "last_poll", "last_error", "ingested", "errors", "locale", "tz"} <= set(_hk), sorted(_hk)
+for _k in ("registry", "bot", "griis", "others", "learned_on", "bootstrap"):
+    main.state.pop(_k)
 assert main._own_point({"local": True, "kind": "sensor", "lat": -8.6528, "lon": 115.1445}) == (_h["lat"], _h["lon"]), \
     "a house's own sensor in the neighbouring cell must stand where the house does"
 assert main._own_point({"local": False, "kind": "child", "lat": -8.6528, "lon": 115.1445}) == main._coarse(-8.6528, 115.1445), \
@@ -246,13 +255,35 @@ main._HOUSE.update(at=time.time() + 1e9, map=[("Kitchen, upstairs", "Sensor 1")]
 r = lan.get("/sensors"); s0 = r.json()[0]
 assert s0["name"] == "Sensor 1" and "Kitchen" not in r.text, f"open: the house's own name reached a stranger: {s0['name']}"
 assert lan.get("/sensors", headers=ADMIN).json()[0]["name"] == "Kitchen, upstairs", "a key still reads the house's names"
+# gzip is the outermost layer (main.py, after _share_level): what it compresses is the relabelled answer
+from starlette.middleware.gzip import GZipMiddleware as _GZ  # noqa: E402
+assert issubclass(main.app.user_middleware[0].cls, _GZ), [m.cls for m in main.app.user_middleware]
+_q1 = main.q                                                  # twenty kits, so the answer is big enough to compress
+main.q = lambda sql, *a: [dict(ROW, sensor_id=f"ag-{i}", meta=dict(ROW["meta"])) for i in range(20)] if "FROM sensors" in sql else []
+r = lan.get("/sensors", headers={"Accept-Encoding": "gzip"})
+main.q = _q1
+assert r.headers.get("content-encoding") == "gzip", f"a {len(r.content)}-byte JSON answer went out uncompressed"
+assert "Kitchen" not in r.text and r.json()[0]["name"] == "Sensor 1", "a compressed answer carried the house's names"
+_seen = []                                                      # /mcp passes through as it was (SPEC_mobile §9)
+async def _probe(scope, receive, send):
+    _seen.append(scope["path"])
+    await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+    await send({"type": "http.response.body", "body": b"x" * 5000})
+_mw = main.app.user_middleware[0]
+from starlette.testclient import TestClient as _TC  # noqa: E402
+_raw = _TC(_mw.cls(_probe, **_mw.kwargs))
+assert _raw.get("/mcp", headers={"Accept-Encoding": "gzip"}).headers.get("content-encoding") is None, "/mcp was gzipped"
+assert _raw.get("/issues", headers={"Accept-Encoding": "gzip"}).headers.get("content-encoding") == "gzip"
+print("open: answers are gzipped after the house's labels are swapped, never before; /mcp is left as it was")
 main._HOUSE.update(map=[("K ROOM - BAYU HOLES", "Sensor 1"), ("Kids", "Room A")])
 _q0 = main.q
 main.q = lambda sql, *a: ([{"id": 1, "ts": "2026-10-15T10:00:00+08:00", "rule_id": "x", "sensor_id": "ag-1", "level": "act",
-                                 "text": "The air in K ROOM - BAYU HOLES is unhealthy", "acted_at": None}] if "FROM alerts" in sql
+                                 "text": "The air in K ROOM - BAYU HOLES is unhealthy", "acted_at": None,
+                                 "buttons": [[{"text": {"en": "K ROOM - BAYU HOLES is fine"}, "value": "fine", "stage": "acted", "ask": None}]]}] if "FROM alerts" in sql
                           else _q0(sql, *a))
 _al = lan.get("/alerts").json()
 assert _al and _al[0]["text"] is None and "BAYU" not in lan.get("/alerts").text, f"open: an alert's sentence reached a stranger: {_al}"
+assert _al[0]["buttons"] is None, f"open: a pack's button words can name a sensor or a place, so they go with the sentence: {_al}"
 assert main._unhoused(b'{"rooms": ["Kids"], "t": "Smoke in Kids"}', "/issues") == b'{"rooms": ["Room A"], "t": "Smoke in Room A"}'
 assert main._unlabelled("Smoke or dust in Kids and K ROOM - BAYU HOLES") == "Smoke or dust in Room A and Sensor 1", \
     "/export's alert lines travel as CC BY whoever asked for them: they carry Room A, never the house's names"
@@ -452,7 +483,7 @@ print("geo: grid, cell, measure and rings answer this machine and a token, refus
 # The ground kept on disk (GET /ground/*): served from out/ground/ by name, private like /place/geojson.
 import gzip as _gz, importlib.util as _iu, json as _json, sqlite3 as _sq, tempfile as _tf
 from pathlib import Path as _P
-_out = _P(_tf.mkdtemp()); main.OUT = _out; (_out / "ground" / "glyphs" / "Noto Sans Regular").mkdir(parents=True)
+_out = _P(_tf.mkdtemp()); main.OUT = main.basemap.OUT = _out; (_out / "ground" / "glyphs" / "Noto Sans Regular").mkdir(parents=True)
 _db = _sq.connect(_out / "ground" / "vector.mbtiles")
 _db.executescript("CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB);")
 _db.execute("INSERT INTO tiles VALUES (15, 26866, ?, ?)", ((1 << 15) - 1 - 17189, _gz.compress(b"mvt")))
@@ -499,5 +530,44 @@ for _lv in ("off", "open"):
     assert lan.get("/machine").status_code == 403, f"/machine answered a stranger at SHARE_LEVEL={_lv}"
 level("off")
 print("storage and machine: the keeper's, refused to the LAN at every level")
+
+# The workbench is a shell like /ui: it answers a stranger at every level, and the reads behind it stay gated. It is
+# the Data door's Workbench tab (Tomas, 27 Oct 2026): doors-data.js frames it, so it brings no chrome of its own, and
+# it flashes from this node, offline: the flasher under /static/vendor/, the firmware under /static/firmware/ once
+# app/firmware.py has kept a copy, and the site's addresses only before that.
+import tempfile as _wbtf
+_wbout, main.OUT = main.OUT, _P(_wbtf.mkdtemp())
+_dt = re.findall(r"^  (\w+): \['([^']+)'", open("app/static/doors-data.js").read().split("const DTABS = {")[1].split("};")[0], re.M)
+assert ("workbench", "Workbench") in _dt, "the workbench must be one of the Data door's tabs (DTABS in doors-data.js)"
+assert 'id="d-workbench"' in open("app/static/doors.html").read(), "doors.html must hold the Workbench tab's section"
+for _lv in ("off", "open"):
+    level(_lv)
+    _wb = lan.get("/workbench")
+    assert _wb.status_code == 200, f"/workbench refused a stranger at SHARE_LEVEL={_lv}"
+    assert 'href="/static/planetai-theme.css"' in _wb.text and 'href="/kit/' not in _wb.text, "/workbench must point the stylesheet at /static/"
+    assert "location.replace('/#data/workbench'" in _wb.text and _wb.text.index("window.parent === window") < _wb.text.index('<nav class="top"'), \
+        "/workbench opened on its own must go to the Data door's tab"
+    assert 'class="nbar"' not in _wb.text, "framed in the Data door, /workbench must not draw a second bar"
+    assert "planetai_theme" in _wb.text and 'data-theme="dark">' not in _wb.text.split("<head>")[0], "/workbench must take the node's register"
+    assert "new URL('/static/vendor/esp-web-tools/install-button.js'" in _wb.text, "the flasher must come from this node"
+    assert "makingsense.fablabbali.com/flash/firmware/';" in _wb.text and "'https://planetai.fab.city/sensors/firmware/meshtastic/'" in _wb.text, \
+        "with no copy kept yet, the firmware comes from where the site reads it"
+    assert lan.get("/static/vendor/esp-web-tools/install-button.js").status_code == 200, f"the flasher refused a stranger at SHARE_LEVEL={_lv}"
+    for _bad in ("/static/vendor/esp-web-tools/..%2F..%2Fdoors.html", "/static/vendor/esp-web-tools/x.html"):
+        assert lan.get(_bad).status_code == 404, f"{_bad} must not be served"
+    _old = lan.get("/tester", follow_redirects=False)
+    assert _old.status_code == 308 and _old.headers["location"] == "/workbench", "/tester must send a bookmark to /workbench"
+# with a copy kept, the page and the files are this node's
+for _f, _b in (("bayu/manifest.json", b"{}"), ("meshtastic/files.json", b"{}"), ("meshtastic/2.7/fw.uf2", b"uf2")):
+    (main.OUT / "firmware" / _f).parent.mkdir(parents=True, exist_ok=True)
+    (main.OUT / "firmware" / _f).write_bytes(_b)
+_wb = lan.get("/workbench").text
+assert "const FW = '/static/firmware/';" in _wb and "const MT_FW = '/static/firmware/meshtastic/';" in _wb, "a kept copy must be what the page flashes"
+assert lan.get("/static/firmware/meshtastic/2.7/fw.uf2").content == b"uf2", "a kept firmware file must answer a stranger"
+for _bad in ("/static/firmware/..%2F..%2Fetc%2Fpasswd", "/static/firmware/meshtastic", "/static/firmware/nothing.bin"):
+    assert lan.get(_bad).status_code == 404, f"{_bad} must not be served"
+main.OUT = _wbout
+level("off")
+print("workbench: the Data door's tab, offline flasher and firmware, answers at every level, /tester redirects")
 
 print("all share-level checks passed")

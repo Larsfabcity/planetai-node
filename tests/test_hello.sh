@@ -19,13 +19,22 @@ case "\$*" in
   *) echo '{"node": "mahon1", "position": "cell", "lat": 39.889, "lon": 4.265, "cell": {"id": "8839a1b2c3fffff", "res": 8}}';;
 esac
 S
-# gh: logged in; a fork is a clone of the registry with a bare repo as its origin; the PR is recorded, not sent
+# fabcity's main is a bare repo: an old commit that still lists a node since gone, then today's registry. The fork
+# stops at the old one. #365 was cut from such a fork and undid every entry merged after it.
+git init -q --bare -b main "$D/upstream.git"
+( g="$(mktemp -d)" && cd "$g" && git init -q \
+  && python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); r["nodes"].append({"name": "gone"}); print(json.dumps(r))' \
+       "$REPO/registry.json" > registry.json \
+  && git add . && git -c user.name=t -c user.email=t@t commit -qm old && git push -q "$D/upstream.git" HEAD:refs/tags/old \
+  && cp "$REPO/registry.json" . && git -c user.name=t -c user.email=t@t commit -qam today && git push -q "$D/upstream.git" HEAD:main && rm -rf "$g" )
+# gh: logged in; a fork is a bare repo whose main is the old commit; sync fast-forwards it; the PR is recorded, not sent
 cat > "$D/stub/gh" <<S
 #!/bin/sh
 case "\$1 \$2" in
   "auth status") exit 0;;
-  "repo fork") git init -q --bare "$D/fork.git" && git clone -q "$D/fork.git" planetai-node 2>/dev/null \\
-      && cp "$REPO/registry.json" planetai-node/ && cd planetai-node && git add . && git -c user.name=t -c user.email=t@t commit -qm base && git push -q origin HEAD:main;;
+  "repo fork") git clone -q --bare "$D/upstream.git" "$D/fork.git" && git --git-dir="$D/fork.git" update-ref refs/heads/main old \\
+      && git clone -q "$D/fork.git" planetai-node 2>/dev/null;;
+  "repo sync") git --git-dir="$D/fork.git" fetch -q "$D/upstream.git" main:main;;
   "api user") echo someone;;
   "pr create") echo "\$@" > "$D/pr";;
 esac
@@ -53,6 +62,11 @@ assert len(m) == 1 and m[0]["operator"] == "Lucas" and m[0]["place"] == "Mahon, 
 assert m[0]["lat"] == 39.889 and "contact" not in m[0], m
 assert any(n["name"] == "bayu-ungasan" for n in r), "the other nodes stay"
 ' && ok "the branch adds mahon1 once, with no contact when none was given, and keeps the others" || bad "registry.json on the branch is wrong"
+printf '%s' "$reg" | python3 -c '
+import json, sys
+r = [n for n in json.load(sys.stdin)["nodes"] if n["name"] != "mahon1"]
+assert r == json.load(open(sys.argv[1]))["nodes"], r
+' "$REPO/registry.json" && ok "the branch starts from fabcity main, not from an old fork" || bad "the branch was cut from the fork's stale list"
 
 # already listed: the list's words are the defaults, and the same entry again sends nothing (12 Oct 2026: node #1's
 # hello offered "bali" and an empty operator while the list said "Ungasan, Badung, Bali, ID" and who runs it)
@@ -67,6 +81,10 @@ out="$(run "" "" "")"
 out="$(run "" "" "new@x.es" n)"
 [[ "$out" == *"since     2026-09"* && "$out" == *"new@x.es"* && ! -e "$D/pr" ]] \
   && ok "a changed listing keeps the month it was first listed, and a no still sends nothing" || bad "since was reset: $out"
+
+# #367 was titled "list bayu-ungasan" for a node listed since September, and read as a new node
+out="$(run "" "" "new@x.es" y)"
+grep -q "registry: update mahon1" "$D/pr" 2>/dev/null && ok "a listed node's pull request says update, not list" || bad "a listed node's title: $(cat "$D/pr" 2>/dev/null) $out"
 
 [[ "$fails" == 0 ]] || { rm -rf "$D"; exit 1; }
 rm -rf "$D"

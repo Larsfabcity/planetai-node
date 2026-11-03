@@ -87,7 +87,8 @@ function buildD(A, locale) {
   /* /settings is describe(): rows, never a flat map */
   const setting = k => { const r = ((A.settings || {}).runtime || []).find(x => x.key === k) || {}; return r.value || r.default || null; };
   return {
-    as_of: I.as_of, tz: H.tz, buckets: Y.buckets || [], order: I.order || [], lead: (I.lead || {}).issue ?? (I.order || [])[0],
+    /* locale is the node's own, for a pack's words (drawAsks); the issues' words fall back to en through L */
+    as_of: I.as_of, tz: H.tz, locale, buckets: Y.buckets || [], order: I.order || [], lead: (I.lead || {}).issue ?? (I.order || [])[0],
     labels: (I.labels || {})[L] || {}, metrics: I.metrics || {}, issues, events, buttons: evs.buttons || {}, sent24: evs.sent_24h ?? null,
     node: { name: H.node, place: H.city }, registry: { name: H.node, place: H.city || H.node },
     share: setting('SHARE_LEVEL'), settings: A.settings || null, askOff: setting('UI_ASK') === 'off',   /* the keeper's switch for every ask, the dashboard's and the doors' */ rho: A.rho || {}, health: H,
@@ -96,6 +97,11 @@ function buildD(A, locale) {
     reach: A.reach || [], sensors: A.sensors || [], observations: A.observations || [], index_cells: A.cells || [],
     geometry: { ladder: G.ladder || [], radio: G.radio || {}, grain: G.grain_table || [], publication: G.publication || {} },
     point: [H.lon, H.lat], stats15, raw, actions, alerts: A.alerts || asks.acts || [], notes: !!A.actions, asks,
+    /* the ask pane's questions, written by the node from tonight's figures (/issues digest.prompts) */
+    prompts: ((I.digest || {}).prompts || {})[L] || ((I.digest || {}).prompts || {}).en || [],
+    /* the bands a pack declares in its pack.yaml, with the node's numbers in them (docs/PACKS.md, A declared section) */
+    sections: (I.sections || []).map(x => ({ ...x, title: tr(x.title), note: tr(x.note),
+      readouts: (x.readouts || []).map(r => ({ ...r, label: tr(r.label) })) })),
   };
 }
 
@@ -145,5 +151,33 @@ const WORDS = {
   noreply: 'The node did not answer. Check this screen is on the home network, then try again.',
 };
 const stateWord = s => WORDS.state[s] || s, kindWord = k => WORDS.kind[k] || k;
+
+/* BANDS A PACK DECLARES (docs/PACKS.md, A declared section). A wild pack ships no script, so it declares its band in
+   its pack.yaml and the node serves it in /issues, with its numbers in it. The doors' Now and the phone page both draw
+   them, so the drawing lives here, beside WORDS; esc, said, num, fmt, prov and ago are each page's own (doors-core.js,
+   mobile.js). Readout rows only. A reading the node has no row for is not drawn, and the band says how many have not
+   arrived; the pack's note is the fine print under it. Each band joins the part of Now of its stage, and act joins
+   decide: neither page has an act part of its own. Returns { observe, decide, measure }, each the bands' HTML. */
+const DECL_STAGES = ['observe', 'decide', 'act', 'measure'];
+const DECL_AT = { observe: 'observe', decide: 'decide', act: 'decide', measure: 'measure' };
+function declaredBands(sections) {
+  const seen = new Set(), at = {}, ord = x => Number.isInteger(x.order) ? x.order : 50;
+  (sections || []).filter(x => x && x.id && DECL_AT[x.stage] && !seen.has(x.id) && seen.add(x.id))
+    .sort((a, b) => DECL_STAGES.indexOf(a.stage) - DECL_STAGES.indexOf(b.stage) || ord(a) - ord(b))
+    .forEach(x => { at[DECL_AT[x.stage]] = (at[DECL_AT[x.stage]] || '') + declaredBand(x); });
+  return at;
+}
+function declaredBand(x) {
+  const rows = x.readouts || [], want = x.expected || rows.length, missing = want - rows.length, pk = esc(x.pack);
+  const card = r => `<div class="row decl" data-kind="readout"><span class="n">${said(r.label || r.metric)}</span>`
+    + `<span class="v">${num(`${x.id}.${r.sensor_id || 'x'}.${r.metric}`, fmt(r.value, r.dp), `the ${x.pack} pack’s figure, beside nothing of this node’s`)}<small>${esc(r.unit || '')}</small></span>`
+    + `<span class="sub">${esc(r.source || x.pack)}${r.provenance ? ` ${prov(r.provenance)}` : ''}${r.age_minutes != null ? ` · ${ago(r.age_minutes)} old` : ''}</span></div>`;
+  return `<section class="decl" id="decl-${esc(x.id)}" data-learn="now-bands" data-reads="/issues" data-stage="${esc(x.stage)}" data-pack="${pk}" data-kind="readout">`
+    + `<h3 class="nh">${said(x.title || x.id)} <small class="nk">${pk}</small></h3><div class="rows">${rows.map(card).join('')}</div>`
+    + (missing > 0 ? `<p class="fine">${rows.length
+      ? `${missing} of the ${want} readings the ${pk} pack declares ${missing === 1 ? 'has' : 'have'} not arrived on this node yet.`
+      : `None of the ${want} readings the ${pk} pack declares has arrived on this node yet.`}</p>` : '')
+    + `<p class="fine">${x.note ? `${esc(x.note)} ` : ''}Declared by the ${pk} pack in its pack.yaml: the node reads these numbers and the page draws them with its own cards; the pack ships no code for this page.</p></section>`;
+}
 
 if (typeof module !== 'undefined') module.exports = { buildD, doorsLocal, doorsFetch, DOORS_LOCKED, WORDS, stateWord, kindWord };
