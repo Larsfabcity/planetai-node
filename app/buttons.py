@@ -95,6 +95,6 @@ def check_answer(buttons, value: str, alert_ts: datetime, now: datetime) -> dict
 
 
 def merge(existing_note: str | None, note: str) -> str | None:
-    """The note to write on an answer the same actor already gave, or None for no write: a later note fills the row,
+    """The note to write on an answer the same actor already gave, or None for no write: a later note replaces the row,
     a repeat tap with no words changes nothing."""
     return note or None

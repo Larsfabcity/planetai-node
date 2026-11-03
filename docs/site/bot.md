@@ -120,9 +120,10 @@ A pack's rule can ask with buttons of its own, on the same switch. The alert rea
 keyboard in the language of `ALERT_LOCALE`, and each press is recorded on that alert as the choice. The bot lifts the
 row that was pressed and writes the button's words and the name of whoever pressed it. If the pack marked a button
 `acknowledged`, like Not now, the whole keyboard goes. If a button has a question, the bot asks it in the chat, and
-the next message there within ten minutes is kept as the note on that answer. Pressing the same button twice yourself
-records nothing new, and on an alert more than 72 hours old the bot says "This question has closed." Now shows the same
-buttons under What to do while they are open. A pack writes them in a rule's `buttons` column, described under
+the next message there within ten minutes from the person who pressed is kept as the note on that answer, and
+anyone else's message in a group chat is not. Pressing the same button twice yourself records nothing new, and on an
+alert more than 72 hours old the bot says "This question has closed." If Telegram refuses a keyboard, the message is
+sent again without it. Now shows the same buttons under What to do while they are open. A pack writes them in a rule's `buttons` column, described under
 Buttons in [Packs](https://github.com/fabcity/planetai-node/blob/main/docs/PACKS.md#buttons).
 
 ## Sending a picture

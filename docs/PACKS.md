@@ -163,7 +163,7 @@ The column is a list of rows and each row is a list of buttons. A button has:
 | `text` | required. A string, which is English, or a map by locale. The node shows the one for `ALERT_LOCALE`, then `en`, then the first the pack wrote, so a button never shows a map |
 | `value` | required. 1 to 40 characters of `a-z`, `0-9`, `:`, `_` and `-`. It is stored as the answer's `choice`, and Telegram's callback is `al:<alert id>:<value>` |
 | `stage` | `acted` (the default) or `acknowledged`. The button sets the stage. An acknowledged answer takes the whole keyboard away on Telegram and takes the question off Now |
-| `ask` | optional, written like `text`. After the press the bot asks it, and the next message in that chat within ten minutes is kept as the note on that answer |
+| `ask` | optional, written like `text`. After the press the bot asks it, and the next message in that chat within ten minutes from the person who pressed is kept as the note on that answer |
 
 A keyboard has at most 8 rows of 4 buttons.
 

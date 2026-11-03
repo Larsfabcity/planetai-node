@@ -3,14 +3,14 @@
 ## Unreleased
 
 - **A pack's rule can ask with buttons.** A rule that returns a `buttons` column, rows of buttons with a text in each
-  language, a `value`, and optionally a `stage` and a question to ask, gets them stored with its alert. With `TELEGRAM_BUTTONS=1` they go to Telegram as a keyboard, and Now lists them
-  under What to do. Each press is one answer:
-  `POST /actions` takes a `choice`, refuses one the alert did not offer (400) or an alert older than 72 hours (409,
-  "this question has closed"), and writes one row for an alert, an actor and a choice, a later note replacing the
-  earlier one. The bot lifts the pressed row and says who answered. When a button asks a question, the reply is kept as
-  the note. A column that does
-  not validate costs the alert its buttons and nothing else, with one warning in the log. `{act}` still works for an
-  answer in words. How to write them is under Buttons in `docs/PACKS.md`.
+  language, a `value`, and optionally a `stage` and a question to ask, gets them stored with its alert. With
+  `TELEGRAM_BUTTONS=1` they go to Telegram as a keyboard, and Now lists them under What to do. Each press is one
+  answer. `POST /actions` takes a `choice`, refuses one the alert did not offer (400) or an alert older than 72 hours
+  (409, "this question has closed"), and writes one row for each person's choice on an alert, a later note from the
+  same person replacing the earlier one. The bot lifts the pressed row and says who answered. When a button asks a
+  question, the reply from the person who pressed is kept as the note. A column that does not validate costs the alert
+  its buttons and nothing else, with one warning in the log. If Telegram refuses a keyboard, the message is sent again
+  without it. `{act}` still works for an answer in words. How to write them is under Buttons in `docs/PACKS.md`.
 
 - **A rule's message can say which number to answer.** `{act}` in a message becomes the alert's own `/act 812` (or
   `planetai act 812` where the bot does not run). Until now a rule could not print it, because the message was written
