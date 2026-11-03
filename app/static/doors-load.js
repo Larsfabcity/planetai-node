@@ -87,7 +87,8 @@ function buildD(A, locale) {
   /* /settings is describe(): rows, never a flat map */
   const setting = k => { const r = ((A.settings || {}).runtime || []).find(x => x.key === k) || {}; return r.value || r.default || null; };
   return {
-    as_of: I.as_of, tz: H.tz, buckets: Y.buckets || [], order: I.order || [], lead: (I.lead || {}).issue ?? (I.order || [])[0],
+    /* locale is the node's own, for a pack's words (drawAsks); the issues' words fall back to en through L */
+    as_of: I.as_of, tz: H.tz, locale, buckets: Y.buckets || [], order: I.order || [], lead: (I.lead || {}).issue ?? (I.order || [])[0],
     labels: (I.labels || {})[L] || {}, metrics: I.metrics || {}, issues, events, buttons: evs.buttons || {}, sent24: evs.sent_24h ?? null,
     node: { name: H.node, place: H.city }, registry: { name: H.node, place: H.city || H.node },
     share: setting('SHARE_LEVEL'), settings: A.settings || null, askOff: setting('UI_ASK') === 'off',   /* the keeper's switch for every ask, the dashboard's and the doors' */ rho: A.rho || {}, health: H,

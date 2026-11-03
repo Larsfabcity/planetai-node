@@ -2955,7 +2955,7 @@ const docFor = u => {
   const layout = u.searchParams.get('layout');
   return layout === 'mobile' ? 'mobile.html' : layout === 'classic' ? 'index.html' : 'doors.html';
 };
-const openRig = async ({ w = 390, h = 844, touch = true, dark = false, token = null, mem = null, throttle = false, locked = false, wireDays = null, admin = null, sections = null } = {}) => {
+const openRig = async ({ w = 390, h = 844, touch = true, dark = false, token = null, mem = null, throttle = false, locked = false, wireDays = null, admin = null, sections = null, alerts = null } = {}) => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: touch, hasTouch: touch,
     deviceScaleFactor: 1, colorScheme: dark ? 'dark' : 'light', reducedMotion: 'reduce' });
@@ -2979,6 +2979,13 @@ const openRig = async ({ w = 390, h = 844, touch = true, dark = false, token = n
       }
     }
     /* sections: the capture with these declared bands in /issues, as the node serves a pack's sections */
+    /* alerts: these first in the capture's /alerts, as a node serves an alert a pack's rule sent with buttons */
+    const am = alerts && u.pathname.match(/^\/issues\/fixtures\/([a-z0-9][a-z0-9._-]{0,63})$/);
+    if (am) {
+      const snap = computeNodeData(decodeURIComponent(am[1])).snapshot;
+      if (snap) return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ ...snap, alerts: [...alerts, ...(snap.alerts || [])] }) });
+    }
     const sm = sections && u.pathname.match(/^\/issues\/fixtures\/([a-z0-9][a-z0-9._-]{0,63})$/);
     if (sm) {
       const snap = computeNodeData(decodeURIComponent(sm[1])).snapshot;
@@ -3546,6 +3553,44 @@ async function doors() {
       ok(m.wide <= 1, `${tag}: Now scrolls ${m.wide}px sideways with a declared band`);
       if (shots) await r.page.screenshot({ path: path.join(OUT, `doors_sections_${tag}.jpg`), type: 'jpeg', quality: 78, fullPage: true });
       said.push(`${tag}: the declared bands sit beside their stage`);
+    }
+    await r.browser.close();
+  }
+  /* What a pack asks (3 Nov 2026): an alert sent with buttons draws under What to do with the token, each row a strip
+     of 44 px buttons; a press is POST /actions {alert_id, choice}, and a button that asks shows one line for the words. */
+  const W = (en, value, ask = null) => ({ text: { en }, value, stage: 'acted', ask });
+  const ASK = [{ id: 990001, ts: new Date().toISOString(), rule_id: 'rig/ask', level: 'info', acted_at: null,
+    text: 'The rig asks something.\nA second line.\n3\n4\n5\n6\nA seventh line nobody reads.',
+    buttons: [[W('Going', 'going'), W('Not today, the swell is far too big for me', 'skip')], [W('Tell me', 'why', { en: 'What would make it better?' })]] }];
+  for (const w of [390, 1440]) for (const dark of [false, true]) {
+    const tag = `${w}_${dark ? 'dark' : 'paper'}_asks`;
+    const r = await openRig({ w, h: w < 768 ? 844 : 900, touch: w < 768, dark, admin: ADMIN, alerts: ASK });
+    const posts = [];
+    await r.page.route('**/actions', route => route.request().method() === 'POST'
+      ? (posts.push(route.request().postDataJSON()), route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' })) : route.fallback());
+    await r.page.goto(`${POP}/?layout=doors&fixture=${FIXTURE}#now`, { waitUntil: 'domcontentloaded' });
+    const got = await wait(r.page, '#asks button[data-al]').then(() => true, () => false);
+    await r.page.waitForSelector('#asking:not(.on)', { state: 'attached', timeout: 6000 }).catch(() => {});
+    ok(got, `${tag}: Now drew no pack buttons`);
+    if (got) {
+      const m = await r.page.evaluate(() => {
+        const a = document.getElementById('asks'), bs = [...a.querySelectorAll('button')];
+        return { under: !!(document.getElementById('decide').compareDocumentPosition(a) & 4) && !a.closest('.rcol'), n: bs.length,
+          small: bs.map(b => b.getBoundingClientRect()).filter(x => x.height < 44 || x.width < 44).length,
+          seventh: a.textContent.includes('seventh'), wide: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      });
+      ok(m.under, `${tag}: #asks is not under What to do`);
+      ok(m.n === 3 && !m.small, `${tag}: ${m.n} buttons, ${m.small} under 44 × 44 px`);
+      ok(!m.seventh, `${tag}: the alert's seventh line is drawn`);
+      ok(m.wide <= 1, `${tag}: Now scrolls ${m.wide}px sideways with a pack's buttons`);
+      await r.page.click('#asks button[data-v="why"]');
+      const form = await wait(r.page, '#asks form input').then(() => true, () => false);
+      ok(form, `${tag}: a button that asks showed no line for the words`);
+      if (form) { await r.page.fill('#asks form input', 'smaller waves'); await r.page.press('#asks form input', 'Enter'); await r.page.waitForTimeout(400); }
+      ok(JSON.stringify(posts) === JSON.stringify([{ alert_id: 990001, choice: 'why', actor: '', note: '' }, { alert_id: 990001, choice: 'why', actor: '', note: 'smaller waves' }]),
+        `${tag}: the presses posted ${JSON.stringify(posts)}`);
+      if (shots) await r.page.screenshot({ path: path.join(OUT, `doors_asks_${tag}.jpg`), type: 'jpeg', quality: 78, fullPage: true });
+      said.push(`${tag}: a pack's buttons under What to do, answered and then the note`);
     }
     await r.browser.close();
   }

@@ -135,6 +135,7 @@ test_issues_engine|PACKS_DIR=packs PYTHONPATH=app python3 tests/test_issues_engi
 test_pack_readouts|PYTHONPATH=app python3 tests/test_pack_readouts.py
 test_pack_sections|PYTHONPATH=app python3 tests/test_pack_sections.py
 test_doors_sections|PYTHONPATH=app python3 tests/test_doors_sections.py
+test_doors_asks|python3 tests/test_doors_asks.py
 test_mobile_sections|PYTHONPATH=app python3 tests/test_mobile_sections.py
 test_requires|PYTHONPATH=app python3 tests/test_requires.py
 test_issues_geometry|PACKS_DIR=packs PYTHONPATH=app python3 tests/test_issues_geometry.py
@@ -196,8 +197,8 @@ printf '  %d suites: %d passed, %d failed, %d check(s) skipped\n' "$total" "$pas
 # test_terrain joined, 23 Oct 2026; test_views_pg and test_grafana joined 24 Oct). If the list and this number disagree, one of them
 # is a typo, and a runner that quietly runs twenty-five of twenty-six is the bug it was written to end.
 # (The word and the number had drifted apart by two bumps when packs/make added the forty-fourth.)
-if [ "$total" -ne 98 ]; then
-  printf '  \033[31mx\033[0m ran %d suites, expected 98 — the list in this file lost or gained a line\n' "$total"
+if [ "$total" -ne 99 ]; then
+  printf '  \033[31mx\033[0m ran %d suites, expected 99 — the list in this file lost or gained a line\n' "$total"
   exit 1
 fi
 [ "$fail" -gt 0 ] && exit 1

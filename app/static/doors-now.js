@@ -5,7 +5,7 @@
    routes it reads and its stage; every figure carries its comparison; the node's words are never shouted; provenance
    is a pill in ink. The scales are Place's: the kicker links there and draws no rail. */
 VIEWS.now = function () {
-  rows(); drawDeclared(); drawNow();
+  rows(); drawDeclared(); drawAsks(); drawNow();
   aroundMap($('#rose')); thingsLine($('#nthings')); rememberLoad().then(() => decision());   /* the usual hour joins "Nothing is asked now" */
 };
 /* YESTERDAY and DID IT WORK: the short part of the diary (Tomas, 14 Oct: the diary split between Now and Node, whose
@@ -205,8 +205,76 @@ document.addEventListener('click', async ev => {
     const said_ = r.ok ? '' : ((await r.json().catch(() => ({}))).detail || `the node refused it (${r.status})`);
     if (!r.ok) { out.textContent = r.status === 401 || r.status === 403 ? WORDS.locked : said_; b.disabled = false; return; }
     out.textContent = b.dataset.stage === 'acknowledged' ? 'Not now. The node holds this for three hours, unless it reaches danger.' : 'Recorded.';
-    D = await loadD().then(d => Object.assign(d, { learn: D.learn, dates: D.dates, at: D.at, now: D.now, sens: D.sens, ngeo: D.ngeo })); VIEWS.now();
+    await nowAgain();
   } catch (e) { out.textContent = WORDS.noreply; b.disabled = false; }
+});
+/* after an answer, the node is asked again and Now redrawn; what this page worked out itself is kept */
+async function nowAgain() {
+  D = await loadD().then(d => Object.assign(d, { learn: D.learn, dates: D.dates, at: D.at, now: D.now, sens: D.sens, ngeo: D.ngeo })); VIEWS.now();
+}
+
+/* WHAT A PACK ASKS (app/buttons.py): a rule may send its alert with buttons, which the bot draws as a keyboard. Now
+   draws the same answers under What to do and writes them the same way, POST /actions {alert_id, choice}. Still asked
+   is an alert of the last 72 hours (after that the node answers 409, "this question has closed") with a row nobody
+   answered: a row goes once anybody pressed one of its buttons, and an acknowledged button answers the whole alert,
+   as on Telegram. /alerts and /actions are token-only, so a screen without the token draws nothing here. */
+function asksFrom(alerts, actions, now) {
+  return (alerts || []).flatMap(a => {
+    if (!(a.buttons || []).length || now - Date.parse(a.ts) > 72 * 36e5) return [];
+    const all = a.buttons.flat(), said = (actions || []).filter(x => x.alert_id === a.id && x.choice), hit = b => said.some(x => x.choice === b.value);
+    if (all.some(b => b.stage === 'acknowledged' && hit(b))) return [];
+    const rows = a.buttons.filter(r => !r.some(hit));
+    return rows.length ? [{ alert: a, rows, answers: said.map(x => ({ ...x, button: all.find(b => b.value === x.choice) || null })) }] : [];
+  });
+}
+/* a pack's words in the page's locale, else English, else the first it wrote (buttons.pick) */
+function packWord(w, lc) {
+  const x = w || {};
+  return x[lc] || x.en || Object.values(x)[0] || '';
+}
+function drawAsks() {
+  const el = $('#asks'), lc = D.locale, asks = asksFrom(D.alerts, D.actions, Date.now());
+  el.hidden = !asks.length;
+  el.innerHTML = asks.map(({ alert: a, rows, answers }) => {
+    const t = String(a.text || '').split('\n'), text = t.slice(0, 6).join('\n') + (t.length > 6 ? '\n…' : '');
+    return `<div class="decide"><p class="nk">${said(String(a.rule_id || '').split('/')[0])} · asked ${esc(wdhm(a.ts))}</p>`
+      + `<p class="said">${esc(text).replace(/\n/g, '<br>')}</p>`
+      + rows.map(r => `<div class="ans" role="group" aria-label="Answer">${r.map(b => `<button data-al="${a.id}" data-v="${esc(b.value)}"${b.ask ? ` data-ask="${esc(packWord(b.ask, lc))}"` : ''}>${said(packWord(b.text, lc))}</button>`).join('')}</div>`).join('')
+      + answers.map(x => `<p class="dm">answered: ${esc(x.button ? packWord(x.button.text, lc) : x.choice)}${x.actor ? ` by ${esc(x.actor)}` : ''} at ${esc(hhmm(x.ts))}${x.note ? ` · “${esc(x.note)}”` : ''}</p>`).join('')
+      + `<p class="dm" role="status"></p></div>`;
+  }).join('');
+}
+/* one answer to a pack's alert, as the bot sends it; returns the node's refusal in words, or '' when it took it */
+async function askAnswer(alertId, choice, note) {
+  let actor = ''; try { actor = localStorage.getItem('planetai_actor') || ''; } catch (e) { /* no storage here */ }
+  try {
+    const r = await fetch('/actions', { method: 'POST', headers: { 'content-type': 'application/json', ...DOORS_AUTH() },
+      body: JSON.stringify({ alert_id: Number(alertId), choice, actor, note }) });
+    if (r.ok) return '';
+    return r.status === 401 || r.status === 403 ? WORDS.locked : ((await r.json().catch(() => ({}))).detail || `the node refused it (${r.status})`);
+  } catch (e) { return WORDS.noreply; }
+}
+/* a press answers; a button that asks something then shows one line for the words, sent with the same choice */
+document.addEventListener('click', async ev => {
+  const b = ev.target.closest && ev.target.closest('#asks button[data-al]');
+  if (!b || b.disabled) return;
+  const box = b.closest('.decide'), out = box.querySelector('[role=status]'); b.disabled = true;
+  const no = await askAnswer(b.dataset.al, b.dataset.v, '');
+  if (no) { out.textContent = no; b.disabled = false; return; }
+  if (b.dataset.ask == null) return nowAgain().catch(() => { out.textContent = WORDS.noreply; });
+  box.querySelectorAll('.ans').forEach(g => g.remove());
+  out.insertAdjacentHTML('beforebegin', `<p class="dm">${said(b.dataset.ask)}</p><form class="ans" data-al="${esc(b.dataset.al)}" data-v="${esc(b.dataset.v)}">`
+    + `<input name="note" maxlength="500" aria-label="${esc(b.dataset.ask)}" required><button>Send</button></form>`);
+  box.querySelector('form input').focus();
+});
+document.addEventListener('submit', async ev => {
+  const f = ev.target.closest && ev.target.closest('#asks form[data-al]');
+  if (!f) return;
+  ev.preventDefault();
+  const out = f.closest('.decide').querySelector('[role=status]'), s = f.querySelector('button'); s.disabled = true;
+  const no = await askAnswer(f.dataset.al, f.dataset.v, f.note.value.trim());
+  if (no) { out.textContent = no; s.disabled = false; return; }
+  await nowAgain().catch(() => { out.textContent = WORDS.noreply; });
 });
 
 /* BANDS A PACK DECLARES (docs/PACKS.md, A declared section): drawn by declaredBands() in doors-load.js, which the
