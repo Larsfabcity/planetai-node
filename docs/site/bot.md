@@ -116,6 +116,15 @@ Done (`acted`), Not now (`acknowledged`) and Doesn't fit (`dismissed`). Pressing
 `event_id`, `stage`, `actor` and `note`. Doesn't fit asks "What did you do instead?" and keeps the reply as the note.
 The button labels are in English, Indonesian and Spanish. `/act` answers an alert, never an event.
 
+A pack's rule can ask with buttons of its own, on the same switch. The alert reaches Telegram with its buttons as a
+keyboard in the language of `ALERT_LOCALE`, and each press is recorded on that alert as the choice. The bot lifts the
+row that was pressed and writes the button's words and the name of whoever pressed it. If the pack marked a button
+`acknowledged`, like Not now, the whole keyboard goes. If a button has a question, the bot asks it in the chat, and
+the next message there within ten minutes is kept as the note on that answer. Pressing the same button twice records
+nothing new, and on an alert more than 72 hours old the bot says "This question has closed." Now shows the same
+buttons under What to do while they are open. A pack writes them in a rule's `buttons` column, described under
+Buttons in [Packs](https://github.com/fabcity/planetai-node/blob/main/docs/PACKS.md#buttons).
+
 ## Sending a picture
 
 A picture sent to the bot is kept on the node, the same as **+ Add an image** on the dashboard. The bot fetches it
