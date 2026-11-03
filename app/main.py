@@ -386,12 +386,17 @@ def run_rules() -> None:
                 line_f = {"line": f"{float(watch_over):g}"} \
                     if isinstance(watch_over, (int, float)) else {}
                 try:
-                    text = tmpl.format(**line_f, **{k: ("—" if v is None else v) for k, v in row.items()})
+                    text = tmpl.format(**line_f, act="{act}", **{k: ("—" if v is None else v) for k, v in row.items()})
                 except (KeyError, ValueError, TypeError):
                     text = tmpl
                 level = rule.get("level", "info")
                 cur.execute("INSERT INTO alerts (rule_id, sensor_id, level, text) VALUES (%s,%s,%s,%s) RETURNING id", (rule["id"], sid, level, text))
                 alert_id = cur.fetchone()["id"]
+                # {act} is this alert's own act_hint, so a message can say which number to answer. The id exists only
+                # once the row does, so the placeholder survives the format above and is filled here.
+                if "{act}" in text:
+                    text = text.replace("{act}", act_hint(alert_id))
+                    cur.execute("UPDATE alerts SET text = %s WHERE id = %s", (text, alert_id))
                 # what interrupts a person: act always; warn if ALERT_LEVEL allows; info only in a briefing (it is
                 # recorded either way, and appears on the dashboard). Quiet hours hold everything but act.
                 floor = {"act": 2, "warn": 1, "info": 0}

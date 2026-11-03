@@ -877,7 +877,7 @@ else:
 
 cmd_act() {
   local id="${1:-}"; [[ "$id" =~ ^[0-9]+$ ]] || { echo "usage: planetai act <alert id> [note]"; exit 1; }
-  local note="${2:-acted}"
+  shift; local note="${*:-acted}"     # every word after the id: a message that asks for "your words" gets them unquoted
   local body; body="$(python3 -c 'import json,sys; print(json.dumps({"alert_id": int(sys.argv[1]), "stage": "acted", "actor": sys.argv[2], "note": sys.argv[3]}))' "$id" "$(whoami)" "$note")"
   local t; t="$(envget ACT_TOKEN)"; [[ -n "$t" ]] || t="$(envget ADMIN_TOKEN)"
   curl -sf -X POST "localhost:$(port)/actions" ${t:+-H "Authorization: Bearer $t"} -H 'content-type: application/json' -d "$body" >/dev/null && say "recorded: you acted on #$id" || { warn "the node did not record it (is alert #$id real? planetai status shows the ids)"; return 1; }
