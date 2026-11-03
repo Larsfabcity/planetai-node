@@ -92,3 +92,9 @@ def check_answer(buttons, value: str, alert_ts: datetime, now: datetime) -> dict
     if (now - alert_ts).total_seconds() > MAX_AGE_H * 3600:
         raise TimeoutError("this question has closed")
     return b
+
+
+def merge(existing_note: str | None, note: str) -> str | None:
+    """The note to write on an answer the same actor already gave, or None for no write: a later note fills the row,
+    a repeat tap with no words changes nothing."""
+    return note or None

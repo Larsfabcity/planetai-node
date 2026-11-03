@@ -84,4 +84,9 @@ except ValueError:
 else:
     raise AssertionError("an alert without buttons offered nothing")
 print("  check_answer: offered, and not older than 72 h")
+
+# the same (alert, actor, choice) is one row; a later note fills it, silence keeps it
+assert buttons.merge(None, "") is None and buttons.merge("x", "") is None
+assert buttons.merge("", "head high") == "head high" and buttons.merge("x", "y") == "y"
+print("  merge: a note fills the row, silence writes nothing")
 print("test_pack_buttons: all checks passed")

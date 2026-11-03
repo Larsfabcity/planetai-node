@@ -2167,15 +2167,24 @@ def action(body: dict, request: Request, authorization: str = Header("")):
                 raise HTTPException(404, str(e)) from None
         return {"ok": True}
     stage = body.get("stage")
+    choice = body.get("choice")      # a pack button's value (app/buttons.py): the button sets the stage, a sent one is ignored
     # `decided` is a record and not an answer: it closes nothing, enters no rho, and is not a funnel stage. A household
     # that looked at an observation, decided what to do and did not manage it leaves the same trace today as one that
     # never looked, and those are opposite facts. docs/SPEC_decide.md section 6.
-    if stage not in ("acknowledged", "acted", "decided"):  # 'settings' rows are written by the node itself, never posted
+    if choice is None and stage not in ("acknowledged", "acted", "decided"):  # 'settings' rows are written by the node itself, never posted
         raise HTTPException(400, "stage must be acknowledged, acted or decided")
     with db() as con, con.cursor() as cur:
-        cur.execute("SELECT 1 FROM alerts WHERE id = %s", (body.get("alert_id"),))
-        if not cur.fetchone():
+        cur.execute("SELECT buttons, ts FROM alerts WHERE id = %s", (body.get("alert_id"),))
+        alert = cur.fetchone()
+        if not alert:
             raise HTTPException(404, "no such alert")
+        if choice is not None:
+            try:   # JSONB comes back parsed; `ts` is timestamptz, so both sides of the age check are aware
+                stage = buttons.check_answer(alert["buttons"], choice, alert["ts"], datetime.now(timezone.utc))["stage"]
+            except ValueError as e:
+                raise HTTPException(400, str(e)) from None
+            except TimeoutError as e:
+                raise HTTPException(409, str(e)) from None
         # DECISION_REQUIRED is a community's switch and it is off by default, because the four other ways in here have
         # no screen to decide on: the Reticulum bridge (a LoRa reply from a device with no display), the MCP `act` tool,
         # the terminal, and curl. A node in a house records an act whether or not anybody deliberated -- somebody smells
@@ -2186,8 +2195,22 @@ def action(body: dict, request: Request, authorization: str = Header("")):
             if not cur.fetchone():
                 raise HTTPException(409, "this node is set to DECISION_REQUIRED, so an act needs a decision recorded "
                                          "against the same alert first. Decide on the dashboard, then record what you did.")
-        cur.execute("INSERT INTO actions (alert_id, stage, actor, note) VALUES (%s,%s,%s,%s)",
-                    (body.get("alert_id"), stage, str(body.get("actor") or "")[:80], str(body.get("note") or "")[:500]))
+        actor, note = str(body.get("actor") or "")[:80], str(body.get("note") or "")[:500]
+        if choice is not None:
+            # One row per (alert, actor, choice): a repeat tap writes nothing, a later note fills the row.
+            # ponytail: no unique index, so two taps in the same millisecond could both insert; add one if that shows up.
+            cur.execute("SELECT note FROM actions WHERE alert_id = %s AND actor = %s AND choice = %s",
+                        (body["alert_id"], actor, choice))
+            row = cur.fetchone()
+            if row:
+                new_note = buttons.merge(row["note"], note)
+                if new_note is None:
+                    return {"ok": True, "kept": True}
+                cur.execute("UPDATE actions SET note = %s WHERE alert_id = %s AND actor = %s AND choice = %s",
+                            (new_note, body["alert_id"], actor, choice))
+                return {"ok": True}
+        cur.execute("INSERT INTO actions (alert_id, stage, actor, note, choice) VALUES (%s,%s,%s,%s,%s)",
+                    (body.get("alert_id"), stage, actor, note, choice))
     return {"ok": True}
 
 
