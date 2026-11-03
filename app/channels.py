@@ -76,8 +76,14 @@ def notify(level: str, text: str, keyboard: list | None = None, home: str = "", 
             body = {"chat_id": chat, "text": f"{head}\n\n{home}\n\n{last}" if sep else said + (f"\n\n{home}" if home else "")}
             if keyboard:
                 body["reply_markup"] = {"inline_keyboard": keyboard}
-            httpx.post(f"https://api.telegram.org/bot{tok}/sendMessage",
-                       json=body, timeout=15).raise_for_status()
+            url = f"https://api.telegram.org/bot{tok}/sendMessage"
+            r = httpx.post(url, json=body, timeout=15)
+            if r.status_code == 400 and "reply_markup" in body:
+                # the message is never lost over its buttons (SPEC_alerts §7): a keyboard Telegram refuses is dropped once
+                log.warning("telegram -> %s refused the keyboard; sending the message without its buttons", chat)
+                body.pop("reply_markup")
+                r = httpx.post(url, json=body, timeout=15)
+            r.raise_for_status()
             log.info("telegram -> %s ok", chat)
             tg_state.update(ok=True, at=time.time())
         except Exception as e:  # noqa: BLE001

@@ -174,6 +174,8 @@ test_figures_wire|PACKS_DIR=packs PYTHONPATH=app python3 tests/test_figures_wire
 test_run_rules_modes|python3 tests/test_run_rules_modes.py
 test_rule_act_placeholder|python3 tests/test_rule_act_placeholder.py
 test_pack_buttons|PYTHONPATH=app python3 tests/test_pack_buttons.py
+test_action_choice|PYTHONPATH=app python3 tests/test_action_choice.py
+test_notify_keyboard|PYTHONPATH=app python3 tests/test_notify_keyboard.py
 test_rule_buttons|PYTHONPATH=app python3 tests/test_rule_buttons.py
 test_kinded_rules|PYTHONPATH=tests:app python3 tests/test_kinded_rules.py
 test_replay|PYTHONPATH=tests:app:tools python3 tests/test_replay.py
@@ -193,12 +195,12 @@ printf '  %d suites: %d passed, %d failed, %d check(s) skipped\n' "$total" "$pas
 [ -n "$skip_lines" ] && printf '%s' "$skip_lines"
 [ -n "$failed_names" ] && printf '  failed:%s\n' "$failed_names"
 
-# Ninety-eight is the number of suites in the list above (test_rule_buttons joined 3 Nov 2026; test_pack_buttons joined 3 Nov 2026; test_rule_act_placeholder joined 2 Nov 2026; test_mobile_sections joined 1 Nov 2026; test_peers_persist left with the Reticulum bridge, and
+# One hundred and one is the number of suites in the list above (test_action_choice and test_notify_keyboard joined 3 Nov 2026; test_doors_asks joined 3 Nov 2026; test_rule_buttons joined 3 Nov 2026; test_pack_buttons joined 3 Nov 2026; test_rule_act_placeholder joined 2 Nov 2026; test_mobile_sections joined 1 Nov 2026; test_peers_persist left with the Reticulum bridge, and
 # test_terrain joined, 23 Oct 2026; test_views_pg and test_grafana joined 24 Oct). If the list and this number disagree, one of them
 # is a typo, and a runner that quietly runs twenty-five of twenty-six is the bug it was written to end.
 # (The word and the number had drifted apart by two bumps when packs/make added the forty-fourth.)
-if [ "$total" -ne 99 ]; then
-  printf '  \033[31mx\033[0m ran %d suites, expected 99 — the list in this file lost or gained a line\n' "$total"
+if [ "$total" -ne 101 ]; then
+  printf '  \033[31mx\033[0m ran %d suites, expected 101 — the list in this file lost or gained a line\n' "$total"
   exit 1
 fi
 [ "$fail" -gt 0 ] && exit 1

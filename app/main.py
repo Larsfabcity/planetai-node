@@ -909,18 +909,19 @@ def _house_labels() -> list[tuple[str, str]]:
     return _HOUSE["map"]
 
 
-_FREE_TEXT = {"/alerts": "text"}     # a route whose rows carry a sentence written when it was sent, under the names then
+_FREE_TEXT = {"/alerts": ("text", "buttons")}     # a route whose rows carry a sentence written when it was sent, under the names then
 
 
 def _unhoused(body: bytes, path: str) -> bytes:
     """An untrusted answer with the house's labels swapped out. JSON only; the swap works on the encoded text, so a
     label is replaced wherever it stands, in a field or inside a sentence."""
-    key = _FREE_TEXT.get(path)
-    if key:
+    keys = _FREE_TEXT.get(path)
+    if keys:
         try:
             rows = json.loads(body)
             if isinstance(rows, list):
-                body = json.dumps([{**r, key: None} if isinstance(r, dict) else r for r in rows]).encode()
+                body = json.dumps([{**r, **{k: None for k in keys}} if isinstance(r, dict) else r
+                                   for r in rows]).encode()
         except ValueError:
             pass
     text = body.decode("utf-8", "replace")
@@ -2197,7 +2198,7 @@ def action(body: dict, request: Request, authorization: str = Header("")):
                                          "against the same alert first. Decide on the dashboard, then record what you did.")
         actor, note = str(body.get("actor") or "")[:80], str(body.get("note") or "")[:500]
         if choice is not None:
-            # One row per (alert, actor, choice): a repeat tap writes nothing, a later note fills the row.
+            # One row per (alert, actor, choice): a repeat tap writes nothing, a later note replaces it.
             # ponytail: no unique index, so two taps in the same millisecond could both insert; add one if that shows up.
             cur.execute("SELECT note FROM actions WHERE alert_id = %s AND actor = %s AND choice = %s",
                         (body["alert_id"], actor, choice))
