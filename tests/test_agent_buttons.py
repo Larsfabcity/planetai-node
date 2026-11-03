@@ -93,11 +93,12 @@ class _Resp:
 
 class _Node:
     """The node, as the bot sees it: GET /alerts, and POST /actions with the three answers B3 gives."""
-    def __init__(self, alerts, offered=("good", "didnt-go"), age_ok=True):
-        self.alerts, self.offered, self.age_ok, self.posts, self.seen = alerts, offered, age_ok, [], set()
+    def __init__(self, alerts, offered=("good", "didnt-go"), age_ok=True, refuse=None):
+        self.alerts, self.offered, self.age_ok, self.refuse, self.posts, self.seen = alerts, offered, age_ok, refuse, [], set()
 
     async def get(self, url, **kw):
-        assert url.endswith("/alerts") and kw["params"]["limit"] == 200, (url, kw)
+        # an open question older than the newest 200 alerts must still be found (the node serves up to 1000)
+        assert url.endswith("/alerts") and kw["params"] == {"since_hours": 72, "limit": 1000}, (url, kw)
         return _Resp(200, self.alerts)
 
     async def post(self, url, json, **kw):
@@ -109,6 +110,8 @@ class _Node:
             return _Resp(400, {})
         if not self.age_ok:
             return _Resp(409, {"detail": "this question has closed"})
+        if self.refuse:
+            return _Resp(409, {"detail": self.refuse})
         key = (json["alert_id"], json["actor"], json["choice"])
         if key in self.seen and not json["note"]:
             return _Resp(200, {"ok": True, "kept": True})
@@ -128,7 +131,8 @@ _quiet.propagate = False
 _ns = {"re": re, "time": __import__("time"), "log": _quiet, "telegram": _telegram, "pick": buttons.pick,
        "CHATS": lambda: {"1", "2"}, "LOCALE": "en", "MCP_URL": "http://app:8080/mcp"}
 _ns = _lift("agent_loop.py", {"parse_callback", "parse_alert_callback", "lift", "node_url", "_name_of", "T",
-                              "_post_answer", "_handle_alert_tap", "handle_callback"}, _ns)
+                              "_post_answer", "_handle_alert_tap", "handle_callback", "note_pending",
+                              "NOTE_WINDOW", "_keep_alert_note"}, _ns)
 parse_alert_callback, lift, handle_callback, _post_answer = (_ns[k] for k in
                                                               ("parse_alert_callback", "lift", "handle_callback", "_post_answer"))
 
@@ -151,9 +155,12 @@ KB7 = [[{"text": "Uluwatu is good", "callback_data": "al:7:good"}],
        [{"text": "Didn't go", "callback_data": "al:7:didnt-go"}]]
 
 
+IDS = {"Ana": 101, "Ben": 202, "Eve": 303}   # Telegram's from.id: the name is only what is shown
+
+
 def tap(node, chat, who, value, pending, qid="q"):
     TG.clear()
-    cq = {"id": qid, "from": {"first_name": who}, "data": f"al:7:{value}",
+    cq = {"id": qid, "from": {"first_name": who, "id": IDS[who]}, "data": f"al:7:{value}",
           "message": {"message_id": 5, "chat": {"id": chat}, "reply_markup": {"inline_keyboard": KB7}}}
     asyncio.run(handle_callback(node, cq, pending))
     return [(m, kw) for m, kw in TG]
@@ -166,8 +173,8 @@ assert [m for m, _ in calls] == ["answerCallbackQuery", "editMessageReplyMarkup"
 assert calls[1][1]["reply_markup"] == {"inline_keyboard": [KB7[1]]}
 assert calls[2][1]["text"] == "Uluwatu is good · Ana" and calls[3][1]["text"] == "How was it?"
 assert node.posts == [{"alert_id": 7, "choice": "good", "actor": "Ana", "note": ""}]
-assert pending["1"][0] == ("al", 7, "good")
-assert note_pending(pending, "1", "waves were clean", pending["1"][1] + 1) == ("al", 7, "good")
+assert pending["1"][0] == ("al", 7, "good", "Ana", 101), "the ask remembers who pressed, by Telegram id"
+assert note_pending(pending, "1", "waves were clean", pending["1"][1] + 1, 101) == ("al", 7, "good", "Ana", 101)
 
 # Review Focus 5: a second chat taps the same alert: a different actor, so it is written, and its keyboard loses the row.
 calls = tap(node, 2, "Ben", "good", {})
@@ -197,6 +204,14 @@ assert calls[0][1]["text"] == "This question has closed." and len(calls) == 1, "
 calls = tap(_Node([ALERT]), 1, "Ana", "nope", {})
 assert calls[0][1]["text"] == "This question has closed.", "a value the alert does not carry writes nothing"
 
+# 409 is two things: a closed question, and (DECISION_REQUIRED) an act that needs a decision first. Each is told as it is.
+n = _Node([ALERT], refuse="this node is set to DECISION_REQUIRED, so an act needs a decision first.")
+calls = tap(n, 1, "Ana", "good", pending := {})
+assert [m for m, _ in calls] == ["answerCallbackQuery"] and not n.posts and not pending
+assert calls[0][1]["text"] == "this node is set to DECISION_REQUIRED, so an act needs a decision first.", calls
+assert tap(_Node([ALERT], age_ok=False), 1, "Ana", "good", {})[0][1]["text"] == "This question has closed.", \
+    "the closed detail still reads as closed"
+
 # The node down: the same message the event path uses, and the keyboard stays.
 class _Down(_Node):
     async def get(self, url, **kw):
@@ -213,6 +228,38 @@ assert [m for m, _ in calls] == ["answerCallbackQuery"] and not n.posts
 n = _Node([ALERT])
 r = asyncio.run(_post_answer(n, None, "", "Ana", note="clean", alert_id=7, choice="good"))
 assert n.posts == [{"alert_id": 7, "choice": "good", "actor": "Ana", "note": "clean"}] and r.json()["ok"]
+
+# A note belongs to the person who pressed. In a household group Ben's next line is not Ana's note (review, 3 Nov).
+ASK = ("al", 7, "good", "Ana", 101)
+p = {"1": (ASK, 100.0)}
+assert note_pending(p, "1", "my own words", 120.0, 202) is None and p["1"][0] == ASK, \
+    "another person's line is not the note, and the ask stays open for the presser"
+assert note_pending(p, "1", "my own words", 120.0) is None and "1" in p, "a line with no sender is nobody's note"
+assert note_pending(p, "1", "/stack", 120.0, 101) is None and "1" in p, "a command is never a note"
+assert note_pending(p, "1", "my own words", 120.0, 101) == ASK and "1" not in p
+
+
+def line(who, text):
+    return {"from": {"first_name": who, "id": IDS[who]}, "text": text}
+
+
+def keep(node, p, who, text, now=120.0):
+    TG.clear()
+    return asyncio.run(_ns["_keep_alert_note"](node, p, "1", line(who, text), text, now)), [(m, kw) for m, kw in TG]
+
+
+n = _Node([ALERT])
+n.seen.add((7, "Ana", "good"))       # Ana's tap was written; a note is the UPDATE of that row, not a new answer
+p = {"1": (ASK, 100.0)}
+handled, said = keep(n, p, "Ben", "waves were clean")
+assert not handled and not n.posts and not said and p["1"][0] == ASK, "Ben writes nothing and the ask stays Ana's"
+handled, said = keep(n, p, "Ana", "/stack")
+assert not handled and not n.posts and "1" in p, "a command is never a note"
+handled, said = keep(n, p, "Ana", "waves were clean")
+assert handled and "1" not in p and n.posts == [{"alert_id": 7, "choice": "good", "actor": "Ana", "note": "waves were clean"}], n.posts
+assert said[0][1]["text"] == "Note kept with that answer."
+handled, said = keep(n, {"1": (12, 100.0)}, "Ana", "an event's ask")
+assert not handled and not n.posts[1:], "an event's ask is left to the event path"
 
 # The event path still posts what it always did.
 class _Ev:
