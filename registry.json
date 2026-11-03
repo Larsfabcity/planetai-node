@@ -2,7 +2,7 @@
   "_": "PLANETAI node directory. Adding a node = a pull request. This file is the registry until there are too many nodes for a file.",
   "nodes": [
     {
-      "name": "larsbcn",
+      "name": "Barcelona Sant Andreu",
       "scale": "community",
       "operator": "Lars Petrova Taylor",
       "place": "Barcelona",
