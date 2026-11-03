@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS alerts (
   text      TEXT
 );
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS id BIGSERIAL;
+-- the buttons a rule offered with this alert (app/buttons.py normalizes them before they are stored)
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS buttons JSONB;
 CREATE INDEX IF NOT EXISTS alerts_cooldown ON alerts (rule_id, sensor_id, ts DESC);
 
 -- The ρ instrument. A human (or an app on their behalf) records what happened after an alert.
@@ -65,6 +67,8 @@ CREATE TABLE IF NOT EXISTS actions (
   actor     TEXT,
   note      TEXT
 );
+-- which of the alert's buttons was pressed; the note stays what the person said
+ALTER TABLE actions ADD COLUMN IF NOT EXISTS choice TEXT;
 
 -- Hourly means. Finished hours are kept in readings_1h_done; the view reads them and groups only the readings from
 -- the table's last hour onward, live. Until 22 Oct 2026 the view grouped every reading ever stored on every read:
