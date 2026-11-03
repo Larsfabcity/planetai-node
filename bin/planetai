@@ -2484,7 +2484,7 @@ reg["nodes"] = nodes
 out = json.dumps(reg, indent=2, ensure_ascii=False)
 out = re.sub(r"\[\s+([^\[\]{}]*?)\s+\]", lambda m: "[" + re.sub(r",\s+", ", ", m.group(1)) + "]", out)
 open(os.environ["REG"], "w").write(out + "\n")'
-  local verb="list"; [[ -n "$remove" ]] && verb="unlist"
+  local verb="list"; [[ "$old" != "{}" ]] && verb="update"; [[ -n "$remove" ]] && verb="unlist"
   ( cd "$repo" && git commit -qam "registry: $verb $name" && git push -qu origin "$branch" >>"$LOG" 2>&1 \
     && gh pr create --repo fabcity/planetai-node --head "$me:$branch" --title "registry: $verb $name" \
        --body "Sent by \`planetai hello\` from $name. The merge is the approval (SPEC.md §2, docs/SPEC_hello.md §5)." ) \
