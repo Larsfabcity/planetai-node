@@ -106,7 +106,8 @@ Every column the message uses must come from the SQL. `make lint` checks that, p
 
 A message that asks for an answer can carry `{act}`. The node fills it with the alert's own number, as the household
 answers it: `/act 812` where the Telegram bot runs, `planetai act 812` where it does not. The SQL does not return it.
-A question with a few fixed answers can use [buttons](#buttons) instead, and `{act}` still works beside them for an answer typed in words.
+A question with a few fixed answers can use [buttons](#buttons) instead, and `{act}` still works beside them for an
+answer typed in words.
 
 A rule can compute something for the report instead of interrupting anyone:
 
@@ -161,7 +162,7 @@ The column is a list of rows and each row is a list of buttons. A button has:
 |---|---|
 | `text` | required. A string, which is English, or a map by locale. The node shows the one for `ALERT_LOCALE`, then `en`, then the first the pack wrote, so a button never shows a map |
 | `value` | required. 1 to 40 characters of `a-z`, `0-9`, `:`, `_` and `-`. It is stored as the answer's `choice`, and Telegram's callback is `al:<alert id>:<value>` |
-| `stage` | `acted` (the default) or `acknowledged`. The button sets the stage, and an acknowledged answer closes the whole question |
+| `stage` | `acted` (the default) or `acknowledged`. The button sets the stage. An acknowledged answer takes the whole keyboard away on Telegram and takes the question off Now |
 | `ask` | optional, written like `text`. After the press the bot asks it, and the next message in that chat within ten minutes is kept as the note on that answer |
 
 A keyboard has at most 8 rows of 4 buttons.
@@ -179,7 +180,9 @@ An answer is `POST /actions` with `alert_id`, `choice`, `actor` and an optional 
 ignored. The node refuses a `choice` the alert did not offer (400), an alert that is not there (404), and any answer
 once the alert is more than 72 hours old (409, "this question has closed"). On a node with `DECISION_REQUIRED` an
 `acted` button needs a decision first, as any act does. An alert, an actor and a choice make one row: the same person
-pressing again writes nothing, a later note fills the row's note, and somebody else's press is a row of their own.
+pressing again writes nothing, a later note is written on that row and replaces an earlier one, and somebody else's
+press is a row of their own. From off the machine the request needs `Authorization: Bearer <ACT_TOKEN>` (or the admin
+token), and without it the node answers 401, or 403 when no token is set.
 
 Buttons and `{act}` are separate ways to answer. `/act 812 closed the windows` still records an answer in words, with
 no choice.
