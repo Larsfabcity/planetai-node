@@ -16,7 +16,7 @@ log = logging.getLogger("planetai.buttons")
 MAX_AGE_H = 72                      # an answer to a question this old is refused: the moment has gone
 MAX_ROWS, MAX_PER_ROW = 8, 4
 STAGES = ("acted", "acknowledged")
-_VALUE = re.compile(r"^[a-z0-9:_-]{1,40}$")   # al:<id>:<value> must fit Telegram's 64 bytes of callback data
+_VALUE = re.compile(r"[a-z0-9:_-]{1,40}")   # fullmatch, not `$` (it accepts a trailing newline). al:<id>:<value> must fit Telegram's 64 bytes of callback data
 
 
 def _words(x) -> dict | None:
@@ -35,7 +35,7 @@ def _button(raw) -> dict:
     if text is None:
         raise ValueError("a button needs text")
     value = raw.get("value")
-    if not (isinstance(value, str) and _VALUE.match(value)):
+    if not (isinstance(value, str) and _VALUE.fullmatch(value)):
         raise ValueError(f"bad value {value!r}")
     stage = raw.get("stage", "acted")
     if stage not in STAGES:

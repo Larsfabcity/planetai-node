@@ -20,6 +20,7 @@ print("  normalize: a good column becomes clean rows")
 BAD = {
     "not json": "not json",
     "bad value": [[{"text": "x", "value": "Bad Value"}]],
+    "newline in value": [[{"text": "x", "value": "good\n"}]],
     "value too long": [[{"text": "x", "value": "a" * 41}]],
     "nine rows": [[{"text": "x", "value": "v"}]] * 9,
     "five buttons": [[{"text": "x", "value": f"v{i}"} for i in range(5)]],
