@@ -392,7 +392,7 @@ assert main._alert_home("heat") == "", "a profile that cannot be read never stop
 rr = SRC[SRC.index("def run_rules"):SRC.index("def _alert_home")]
 assert 'home=_alert_home(rule["id"]) if level == "act" else ""' in rr and 'home=_alert_home(m.event.issue) if m.event.level == "act" else ""' in rr, \
     "both engines, act level only"
-assert "INSERT INTO alerts (rule_id, sensor_id, level, text) VALUES (%s,%s,%s,%s)" in rr and "_alert_home" not in rr.split("INSERT INTO alerts")[0][-400:], \
+assert "INSERT INTO alerts (rule_id, sensor_id, level, text, buttons) VALUES (%s,%s,%s,%s,%s)" in rr and "_alert_home" not in rr.split("INSERT INTO alerts")[0][-400:], \
     "the stored alert text, which /alerts serves, never carries it"
 print("alerts: act-level heat and air say who here they matter to, in the household's language, on Telegram only")
 # ---------------------------------------------------------------- the house's counts stay with the house

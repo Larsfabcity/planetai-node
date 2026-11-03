@@ -33,6 +33,7 @@ from urllib.parse import urlparse
 
 import httpx
 import re
+from buttons import pick
 from contextlib import asynccontextmanager
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
@@ -678,12 +679,29 @@ def parse_callback(data) -> tuple[int, str] | None:
     return (int(m.group(1)), m.group(2)) if m else None
 
 
-def note_pending(pending: dict, chat: str, text: str, now: float) -> int | None:
+def parse_alert_callback(data) -> tuple[int, str] | None:
+    """al:<alert_id>:<value> — what buttons.telegram_rows writes under an alert a pack gave buttons. The value is
+    the only thing taken from the callback; the button's words, stage and question are read back from the node."""
+    m = re.fullmatch(r"al:(\d+):([a-z0-9:_-]{1,40})", str(data or ""))
+    return (int(m.group(1)), m.group(2)) if m else None
+
+
+def lift(keyboard: list, data: str, all_rows: bool) -> list:
+    """The inline keyboard without the row holding `data` (the answer was taken there); [] when `all_rows`
+    (an acknowledged answer closes the whole question)."""
+    if all_rows:
+        return []
+    return [row for row in keyboard if not any(b.get("callback_data") == data for b in row)]
+
+
+def note_pending(pending: dict, chat: str, text: str, now: float, from_id=None) -> int | tuple | None:
     """The Doesn't-fit follow-up. The dismissal was already recorded at the press; a free-text line within
     NOTE_WINDOW becomes its note — a second actions row, which is allowed on purpose ("two people who both acted
     are both recording something true"), and the wire keeps the latest answer, which is the one carrying the note.
     A command is never a note and leaves the ask open; a stale ask is forgotten. Returns the event id to
-    annotate, or None."""
+    annotate (or, for a pack button's question, the ("al", alert_id, choice, actor, from_id) it was asked under), or
+    None. A pack button's question belongs to the person who pressed: in a group chat another person's line is not
+    its note (`from_id` is Telegram's id, never the name) and the ask stays open for the presser."""
     p = pending.get(chat)
     if not p:
         return None
@@ -692,8 +710,31 @@ def note_pending(pending: dict, chat: str, text: str, now: float) -> int | None:
         return None
     if text.startswith("/"):
         return None
+    if isinstance(p[0], tuple) and (from_id is None or from_id != p[0][4]):
+        return None
     pending.pop(chat, None)
     return p[0]
+
+
+async def _keep_alert_note(hc, pending: dict, chat: str, m: dict, text: str, now: float) -> bool:
+    """The line that answers a pack button's question, from the person who pressed it, goes to the same row as that
+    answer (the stored actor, so it is always the UPDATE of their row). True when the line was taken as the note;
+    anything else (an event's ask, another person, a command, a stale ask) is left to the normal flow."""
+    p = pending.get(chat)
+    if not (p and isinstance(p[0], tuple)):
+        return False
+    ask = note_pending(pending, chat, text, now, (m.get("from") or {}).get("id"))
+    if not isinstance(ask, tuple):
+        return False
+    try:
+        await _post_answer(hc, None, "", ask[3], note=text, alert_id=ask[1], choice=ask[2])
+        said = T("Note kept with that answer.", es="Nota guardada con esa respuesta.")
+    except Exception as e:  # noqa: BLE001
+        log.warning("note on alert #%s failed: %s: %s", ask[1], type(e).__name__, str(e)[:200])
+        said = T("⚠️ I could not keep that note on the node. The answer stands; the note is lost.",
+                 es="⚠️ No pude guardar esa nota en el nodo. La respuesta queda; la nota se pierde.")
+    await telegram("sendMessage", chat_id=chat, text=said)
+    return True
 
 
 def _name_of(user: dict) -> str:
@@ -861,10 +902,71 @@ async def keep_picture(hc, m: dict, chat: str) -> bool:
     return True
 
 
-async def _post_answer(hc, event_id: int, stage: str, actor: str, note: str = "") -> None:
-    r = await hc.post(node_url("/actions"), timeout=15,
-                      json={"event_id": event_id, "stage": stage, "actor": actor, "note": note})
+async def _post_answer(hc, event_id: int | None, stage: str, actor: str, note: str = "", *,
+                       alert_id: int | None = None, choice: str = ""):
+    """POST /actions: an event's stage, or (alert_id + choice) a pack button's answer. Raises on any 4xx/5xx; the
+    response comes back so a caller can read `kept`."""
+    body = ({"alert_id": alert_id, "choice": choice, "actor": actor, "note": note} if alert_id is not None
+            else {"event_id": event_id, "stage": stage, "actor": actor, "note": note})
+    r = await hc.post(node_url("/actions"), timeout=15, json=body)
     r.raise_for_status()
+    return r
+
+
+async def _handle_alert_tap(hc, cq: dict, pending: dict, chat: str, actor: str, alert_id: int, choice: str) -> None:
+    """A tap on a pack's button. The node is asked what the button is (text, stage, question) and decides whether
+    the answer is taken (/actions: 400 not offered, 404 no alert, 409 closed). A second chat's tap is a second
+    actor and is written; the same actor repeating a choice comes back `kept` and says nothing twice."""
+    qid = cq.get("id")
+    msg = cq.get("message") or {}
+
+    async def answer(text: str = "") -> None:
+        if qid:
+            await telegram("answerCallbackQuery", callback_query_id=qid, **({"text": text} if text else {}))
+
+    closed = T("This question has closed.", es="Esta pregunta ya se cerró.")
+    try:
+        # the node's own window for an open question: it closes after 72 hours (buttons.MAX_AGE_H), and a busy node
+        # can write more than 200 alerts in that time
+        r = await hc.get(node_url("/alerts"), params={"since_hours": 72, "limit": 1000}, timeout=15)
+        r.raise_for_status()
+        alert = next((a for a in r.json() if a.get("id") == alert_id), None)
+    except Exception as e:  # noqa: BLE001
+        log.warning("reading alert #%s failed: %s: %s", alert_id, type(e).__name__, str(e)[:200])
+        return await answer(T("⚠️ I could not record that on the node. Nothing was written; press again in a moment.",
+                              es="⚠️ No pude anotarlo en el nodo. No se escribió nada; pulsa de nuevo en un momento."))
+    button = next((b for row in (alert or {}).get("buttons") or [] for b in row if b["value"] == choice), None)
+    if not button:
+        return await answer(closed)
+    try:
+        r = await _post_answer(hc, None, "", actor, alert_id=alert_id, choice=choice)
+    except Exception as e:  # noqa: BLE001
+        code = getattr(getattr(e, "response", None), "status_code", None)
+        log.warning("answer on alert #%s failed: %s: %s", alert_id, type(e).__name__, str(e)[:200])
+        if code == 409:
+            # closed, or (DECISION_REQUIRED) an act that needs a decision first: say the one the node said
+            try:
+                detail = str(e.response.json().get("detail") or "")
+            except Exception:  # noqa: BLE001
+                detail = ""
+            return await answer(detail if detail and detail != "this question has closed" else closed)
+        if code in (400, 404):
+            return await answer(T("That answer is not open any more.", es="Esa respuesta ya no está abierta."))
+        return await answer(T("⚠️ I could not record that on the node. Nothing was written; press again in a moment.",
+                              es="⚠️ No pude anotarlo en el nodo. No se escribió nada; pulsa de nuevo en un momento."))
+    await answer()
+    kept = bool((r.json() or {}).get("kept"))
+    try:
+        await telegram("editMessageReplyMarkup", chat_id=chat, message_id=msg.get("message_id"),
+                       reply_markup={"inline_keyboard": lift((msg.get("reply_markup") or {}).get("inline_keyboard") or [],
+                                                             cq.get("data"), button["stage"] == "acknowledged")})
+        if not kept:
+            await telegram("sendMessage", chat_id=chat, text=f"{pick(button['text'], LOCALE)} · {actor}")
+    except Exception as e:  # noqa: BLE001
+        log.warning("callback follow-up failed: %s", type(e).__name__)
+    if button.get("ask") and not kept:
+        pending[chat] = (("al", alert_id, choice, actor, (cq.get("from") or {}).get("id")), time.monotonic())
+        await telegram("sendMessage", chat_id=chat, text=pick(button["ask"], LOCALE))
 
 
 async def handle_callback(hc, cq: dict, pending: dict) -> None:
@@ -876,11 +978,14 @@ async def handle_callback(hc, cq: dict, pending: dict) -> None:
     chat = str((msg.get("chat") or {}).get("id", ""))
     actor = _name_of(cq.get("from") or {})
     parsed = parse_callback(cq.get("data"))
+    alert_tap = parse_alert_callback(cq.get("data"))
     if chat not in CHATS():
         log.info("callback from chat %s ignored: not in TELEGRAM_CHAT_IDS", chat)
         if qid:
             await telegram("answerCallbackQuery", callback_query_id=qid)
         return
+    if alert_tap:
+        return await _handle_alert_tap(hc, cq, pending, chat, actor, *alert_tap)
     if not parsed:
         if qid:
             await telegram("answerCallbackQuery", callback_query_id=qid,
@@ -1010,6 +1115,8 @@ async def main():
                         f"This node answers its household only. To be added, ask whoever set it up to add this chat: {chat}.",
                         es=f"Este nodo solo responde a su casa. Para entrar, pide a quien lo instaló que añada este chat: {chat}."))
                 continue
+            if await _keep_alert_note(hc, pending, chat, m, text, time.monotonic()):
+                continue                              # the answer to a pack button's question
             note_eid = note_pending(pending, chat, text, time.monotonic())
             if note_eid is not None:
                 try:

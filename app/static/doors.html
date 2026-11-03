@@ -207,6 +207,9 @@ details .in{padding:0 0 16px;color:var(--mute);font-size:var(--t-small);max-widt
 .ans{display:flex;gap:0;border:1px solid var(--ink);width:max-content;max-width:100%}
 .ans button{background:none;border:0;border-right:1px solid var(--ink);padding:0 16px;min-height:44px;font:600 var(--t-small) var(--body);cursor:pointer}
 .ans button:last-child{border-right:0}.ans button.on{background:var(--ink);color:var(--ground)}
+/* what a pack asks (#asks), under What to do: each alert framed as the Decide card, its rows of buttons one under another */
+#asks .decide{margin-top:12px}#asks .ans{margin-top:8px}#asks p.said{margin:6px 0 0;max-width:64ch}
+.ans input{border:0;border-right:1px solid var(--ink);background:none;color:var(--ink);padding:0 12px;min-height:44px;min-width:0;width:min(320px,52vw);font:var(--t-small) var(--body)}
 .fig{margin-top:14px}
 .fig svg{display:block;width:100%;height:auto;overflow:visible;touch-action:pan-y;cursor:ew-resize}
 .figfoot{margin-top:8px;font-size:var(--t-cap)}
@@ -800,7 +803,8 @@ section.decl{margin-top:22px}.row.decl{cursor:default}   /* a pack's declared ba
       <p class="ladder" id="ladder" data-learn="now-distances" data-reads="/issues" data-stage="observe" data-pack="core" data-kind="stack"></p>
       <p class="nk figfoot"><span id="fighead"></span> <span id="figline"></span></p>
     </div>
-    <section class="todo" id="decide" data-learn="now-todo" data-reads="/issues /actions" data-stage="decide" data-pack="core" data-kind="readout" aria-label="What to do"></section>
+    <section class="todo" id="decide" data-learn="now-todo" data-reads="/issues /actions /alerts" data-stage="decide" data-pack="core" data-kind="readout" aria-label="What to do"></section>
+    <div id="asks" hidden></div>
     <div id="ndecl-decide" hidden></div>
     <section class="nrem" id="nremember" data-learn="now-worked" data-reads="/learned /learned/search /household" data-stage="measure" data-pack="core" data-kind="readout" aria-label="Did it work, and yesterday" hidden></section>
     <div id="ndecl-measure" hidden></div>

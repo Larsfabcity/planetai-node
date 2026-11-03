@@ -30,6 +30,7 @@ from psycopg.types.json import Jsonb
 
 import bootstrap
 import agent
+import buttons
 import actions as _act
 import events_pg
 import fundamentals
@@ -377,6 +378,9 @@ def run_rules() -> None:
                 )
                 if cur.fetchone():
                     continue
+                # `buttons` is the rule's question, not a word for the message: it leaves the row before the format,
+                # and normalize is the only reading of it (an invalid column costs the buttons, never the alert).
+                btns = buttons.normalize(row.pop("buttons", None))
                 msg = rule["message"]
                 tmpl = msg.get(LOCALE()) or msg.get("en") if isinstance(msg, dict) else str(msg)
                 # {line} is the one placeholder the row never carries: it is the rule's own line,
@@ -390,7 +394,8 @@ def run_rules() -> None:
                 except (KeyError, ValueError, TypeError):
                     text = tmpl
                 level = rule.get("level", "info")
-                cur.execute("INSERT INTO alerts (rule_id, sensor_id, level, text) VALUES (%s,%s,%s,%s) RETURNING id", (rule["id"], sid, level, text))
+                cur.execute("INSERT INTO alerts (rule_id, sensor_id, level, text, buttons) VALUES (%s,%s,%s,%s,%s) RETURNING id",
+                            (rule["id"], sid, level, text, json.dumps(btns) if btns else None))
                 alert_id = cur.fetchone()["id"]
                 # {act} is this alert's own act_hint, so a message can say which number to answer. The id exists only
                 # once the row does, so the placeholder survives the format above and is filled here.
@@ -406,7 +411,10 @@ def run_rules() -> None:
                     # No id, and nothing asking to be told. The node watches what happens next (v0.39) instead of
                     # asking; a number a household is expected to quote back was a chore, and 15 of node #1's 37
                     # act alerts got an answer, nine of them in two dashboard batch-clicks a day later.
-                    notify(level, text, home=_alert_home(rule["id"]) if level == "act" else "")
+                    # Buttons ride only when the bot has announced itself, as for events; they are stored either way.
+                    kb = buttons.telegram_rows(btns, alert_id, settings.get("ALERT_LOCALE", "en") or "en") \
+                        if btns and settings.num("TELEGRAM_BUTTONS", 0) else None
+                    notify(level, text, keyboard=kb, home=_alert_home(rule["id"]) if level == "act" else "")
                 packs.emit("on_alert", level, text, alert_id)
         if mode in ("shadow", "events"):
             try:
@@ -901,18 +909,19 @@ def _house_labels() -> list[tuple[str, str]]:
     return _HOUSE["map"]
 
 
-_FREE_TEXT = {"/alerts": "text"}     # a route whose rows carry a sentence written when it was sent, under the names then
+_FREE_TEXT = {"/alerts": ("text", "buttons")}     # a route whose rows carry a sentence written when it was sent, under the names then
 
 
 def _unhoused(body: bytes, path: str) -> bytes:
     """An untrusted answer with the house's labels swapped out. JSON only; the swap works on the encoded text, so a
     label is replaced wherever it stands, in a field or inside a sentence."""
-    key = _FREE_TEXT.get(path)
-    if key:
+    keys = _FREE_TEXT.get(path)
+    if keys:
         try:
             rows = json.loads(body)
             if isinstance(rows, list):
-                body = json.dumps([{**r, key: None} if isinstance(r, dict) else r for r in rows]).encode()
+                body = json.dumps([{**r, **{k: None for k in keys}} if isinstance(r, dict) else r
+                                   for r in rows]).encode()
         except ValueError:
             pass
     text = body.decode("utf-8", "replace")
@@ -1330,7 +1339,7 @@ def observations(request: Request, authorization: str = Header("")):
 def alerts(limit: int = Query(50, ge=0, le=1000), since_hours: int = Query(0, ge=0, le=2160)):
     """Alerts newest first, each with its id (what `planetai act <id>` and the GUI's Act button need) and whether
     anyone has already acted on it. `since_hours` keeps only those of the last that many hours; 0 is no bound."""
-    return q("""SELECT a.id, a.ts, a.rule_id, a.sensor_id, a.level, a.text,
+    return q("""SELECT a.id, a.ts, a.rule_id, a.sensor_id, a.level, a.text, a.buttons,
                        (SELECT min(x.ts) FROM actions x WHERE x.alert_id = a.id AND x.stage IN ('acknowledged','acted')) AS acted_at
                 FROM alerts a WHERE %s = 0 OR a.ts > now() - make_interval(hours => %s)
                 ORDER BY a.ts DESC LIMIT %s""", since_hours, since_hours, limit)
@@ -1358,18 +1367,18 @@ def actions(limit: int = Query(500, ge=0, le=5000), stage: str = "", events: int
         if events:
             # With events=1 on a stage filter, include event rows with their event_id. Settings rows (both NULL)
             # must always be returned regardless of events flag.
-            return q("SELECT ts, alert_id, event_id, stage, actor, note FROM actions WHERE stage = %s "
+            return q("SELECT ts, alert_id, event_id, stage, actor, note, choice FROM actions WHERE stage = %s "
                      "ORDER BY ts DESC LIMIT %s",
                      stage, limit)
         # Default: exclude event rows (alert_id NULL, event_id set) but keep settings rows (both NULL)
-        return q("SELECT ts, alert_id, stage, actor, note FROM actions WHERE stage = %s AND "
+        return q("SELECT ts, alert_id, stage, actor, note, choice FROM actions WHERE stage = %s AND "
                  "(alert_id IS NOT NULL OR event_id IS NULL) ORDER BY ts DESC LIMIT %s",
                  stage, limit)
     if events:
         # the event answers too, with event_id; without it the v0.76 page never meets a row with no alert_id
-        return q("SELECT ts, alert_id, event_id, stage, actor, note FROM actions "
+        return q("SELECT ts, alert_id, event_id, stage, actor, note, choice FROM actions "
                  "WHERE alert_id IS NOT NULL OR event_id IS NOT NULL ORDER BY ts DESC LIMIT %s", limit)
-    return q("SELECT ts, alert_id, stage, actor, note FROM actions WHERE alert_id IS NOT NULL "
+    return q("SELECT ts, alert_id, stage, actor, note, choice FROM actions WHERE alert_id IS NOT NULL "
              "ORDER BY ts DESC LIMIT %s", limit)
 
 
@@ -2159,15 +2168,24 @@ def action(body: dict, request: Request, authorization: str = Header("")):
                 raise HTTPException(404, str(e)) from None
         return {"ok": True}
     stage = body.get("stage")
+    choice = body.get("choice")      # a pack button's value (app/buttons.py): the button sets the stage, a sent one is ignored
     # `decided` is a record and not an answer: it closes nothing, enters no rho, and is not a funnel stage. A household
     # that looked at an observation, decided what to do and did not manage it leaves the same trace today as one that
     # never looked, and those are opposite facts. docs/SPEC_decide.md section 6.
-    if stage not in ("acknowledged", "acted", "decided"):  # 'settings' rows are written by the node itself, never posted
+    if choice is None and stage not in ("acknowledged", "acted", "decided"):  # 'settings' rows are written by the node itself, never posted
         raise HTTPException(400, "stage must be acknowledged, acted or decided")
     with db() as con, con.cursor() as cur:
-        cur.execute("SELECT 1 FROM alerts WHERE id = %s", (body.get("alert_id"),))
-        if not cur.fetchone():
+        cur.execute("SELECT buttons, ts FROM alerts WHERE id = %s", (body.get("alert_id"),))
+        alert = cur.fetchone()
+        if not alert:
             raise HTTPException(404, "no such alert")
+        if choice is not None:
+            try:   # JSONB comes back parsed; `ts` is timestamptz, so both sides of the age check are aware
+                stage = buttons.check_answer(alert["buttons"], choice, alert["ts"], datetime.now(timezone.utc))["stage"]
+            except ValueError as e:
+                raise HTTPException(400, str(e)) from None
+            except TimeoutError as e:
+                raise HTTPException(409, str(e)) from None
         # DECISION_REQUIRED is a community's switch and it is off by default, because the four other ways in here have
         # no screen to decide on: the Reticulum bridge (a LoRa reply from a device with no display), the MCP `act` tool,
         # the terminal, and curl. A node in a house records an act whether or not anybody deliberated -- somebody smells
@@ -2178,8 +2196,22 @@ def action(body: dict, request: Request, authorization: str = Header("")):
             if not cur.fetchone():
                 raise HTTPException(409, "this node is set to DECISION_REQUIRED, so an act needs a decision recorded "
                                          "against the same alert first. Decide on the dashboard, then record what you did.")
-        cur.execute("INSERT INTO actions (alert_id, stage, actor, note) VALUES (%s,%s,%s,%s)",
-                    (body.get("alert_id"), stage, str(body.get("actor") or "")[:80], str(body.get("note") or "")[:500]))
+        actor, note = str(body.get("actor") or "")[:80], str(body.get("note") or "")[:500]
+        if choice is not None:
+            # One row per (alert, actor, choice): a repeat tap writes nothing, a later note replaces it.
+            # ponytail: no unique index, so two taps in the same millisecond could both insert; add one if that shows up.
+            cur.execute("SELECT note FROM actions WHERE alert_id = %s AND actor = %s AND choice = %s",
+                        (body["alert_id"], actor, choice))
+            row = cur.fetchone()
+            if row:
+                new_note = buttons.merge(row["note"], note)
+                if new_note is None:
+                    return {"ok": True, "kept": True}
+                cur.execute("UPDATE actions SET note = %s WHERE alert_id = %s AND actor = %s AND choice = %s",
+                            (new_note, body["alert_id"], actor, choice))
+                return {"ok": True}
+        cur.execute("INSERT INTO actions (alert_id, stage, actor, note, choice) VALUES (%s,%s,%s,%s,%s)",
+                    (body.get("alert_id"), stage, actor, note, choice))
     return {"ok": True}
 
 
